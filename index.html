@@ -61,7 +61,7 @@ html, body {
   grid-template-rows: 58px 1fr;
   grid-template-areas: "hd hd hd" "sb mn ai";
   height: 100dvh; width: 100dvw;
-  opacity: 0; transition: opacity .6s;
+  opacity: 1;
 }
 #app.show { opacity: 1; }
 
@@ -684,7 +684,7 @@ function runBoot() {
     }
   }, 22);
 }
-window.addEventListener('load', runBoot);
+document.addEventListener("DOMContentLoaded", runBoot);
 
 /* ══ INIT ══ */
 function init() {
