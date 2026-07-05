@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -41,6 +43,13 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
     private var bondedDevices: List<BluetoothDevice> = emptyList()
     private var connected = false
     private var suppressWatcher = false
+    private var serviceStarted = false
+
+    private val serviceHandler = Handler(Looper.getMainLooper())
+    private val stopServiceRunnable = Runnable {
+        stopService(Intent(this, KeyboardHidService::class.java))
+        serviceStarted = false
+    }
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
@@ -102,6 +111,7 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
 
     override fun onDestroy() {
         HidManager.removeListener(this)
+        serviceHandler.removeCallbacks(stopServiceRunnable)
         super.onDestroy()
     }
 
@@ -271,12 +281,19 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
     override fun onConnectionChanged(device: BluetoothDevice?, state: Int) {
         runOnUiThread {
             connected = state == BluetoothProfile.STATE_CONNECTED
+            serviceHandler.removeCallbacks(stopServiceRunnable)
             if (connected && device != null) {
-                val serviceIntent = Intent(this, KeyboardHidService::class.java)
-                    .putExtra(KeyboardHidService.EXTRA_DEVICE_NAME, device.name ?: device.address)
-                ContextCompat.startForegroundService(this, serviceIntent)
-            } else {
-                stopService(Intent(this, KeyboardHidService::class.java))
+                if (!serviceStarted) {
+                    val serviceIntent = Intent(this, KeyboardHidService::class.java)
+                        .putExtra(KeyboardHidService.EXTRA_DEVICE_NAME, device.name ?: device.address)
+                    ContextCompat.startForegroundService(this, serviceIntent)
+                    serviceStarted = true
+                }
+            } else if (serviceStarted) {
+                // Debounce: a flapping BT link can disconnect within ms of connecting.
+                // Stopping immediately can race the service's startForeground() call
+                // and crash with ForegroundServiceDidNotStartInTimeException.
+                serviceHandler.postDelayed(stopServiceRunnable, 1500L)
             }
             updateUi()
         }
