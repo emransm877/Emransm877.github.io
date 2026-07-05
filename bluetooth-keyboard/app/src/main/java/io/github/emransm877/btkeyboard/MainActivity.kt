@@ -2,6 +2,7 @@ package io.github.emransm877.btkeyboard
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import android.content.ClipboardManager
@@ -61,6 +62,20 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
             }
         }
 
+    private val discoverableLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+
+    /**
+     * TV's "Add accessory" scan only finds devices in Bluetooth inquiry-scan
+     * mode. Being bonded or running the HID app is not enough — without this,
+     * the phone is invisible to that scan no matter how long you wait.
+     */
+    private fun requestDiscoverable() {
+        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+            .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        discoverableLauncher.launch(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -76,7 +91,10 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
         clearButton = findViewById(R.id.clearButton)
         liveTypingSwitch = findViewById(R.id.liveTypingSwitch)
 
-        refreshButton.setOnClickListener { refreshDeviceList() }
+        refreshButton.setOnClickListener {
+            refreshDeviceList()
+            requestDiscoverable()
+        }
         pairButton.setOnClickListener {
             startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
@@ -156,6 +174,7 @@ class MainActivity : AppCompatActivity(), HidManager.Listener {
         }
         HidManager.start(this)
         refreshDeviceList()
+        requestDiscoverable()
     }
 
     // ------------------------------------------------------------------
