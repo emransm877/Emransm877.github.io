@@ -20,13 +20,16 @@ class IrTransmitter(context: Context) {
     val available: Boolean
         get() = ir?.hasIrEmitter() == true
 
-    /** Send the full AC state. Returns true if the blaster actually fired. */
-    fun send(state: AcState): Boolean {
+    /** Send the full AC state using the state's selected protocol. */
+    fun send(state: AcState): Boolean = sendFrame(AcEncoder.encode(state))
+
+    /** Send a raw pre-built frame (e.g. a swing-toggle command). */
+    fun sendFrame(frame: IrFrame): Boolean {
         buzz()
         val emitter = ir ?: return false
         if (!emitter.hasIrEmitter()) return false
         return try {
-            emitter.transmit(GreeProtocol.CARRIER_HZ, GreeProtocol.buildPattern(state))
+            emitter.transmit(frame.carrierHz, frame.pattern)
             true
         } catch (e: Exception) {
             false

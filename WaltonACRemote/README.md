@@ -29,13 +29,23 @@ animated display that always shows what the AC was told to do.
   to the phone), so the ROOM readout is a value you set to match your room
   thermometer; it's kept on the display next to the set temperature.
 
-## Protocol
+## Protocols & auto-detect
 
-Walton split ACs use the **Gree YAW1F-family IR protocol** (38 kHz). The encoder
-lives in [`GreeProtocol.kt`](app/src/main/java/com/emran/waltonac/GreeProtocol.kt):
-9000/4500 µs header, two 32-bit LSB-first blocks separated by a 0b010 footer and
-~20 ms gap, nibble checksum. If your particular Walton model doesn't respond,
-that file is the only place that needs adjusting.
+Walton has shipped indoor units on several Chinese platforms, so the app speaks
+three protocol families and includes a **🔍 FIND MY AC** wizard that fires a
+test signal with each protocol until you confirm the AC beeped, then locks it:
+
+| App name | Family | Used by |
+|----------|--------|---------|
+| MIDEA-24 | Coolix 24-bit | Most Walton splits (RG52-clone remotes) — the default |
+| GREE     | Gree YAW1F 64-bit | Some Walton inverter models |
+| MIDEA-48 | Midea 48-bit | Newer Midea-platform units |
+
+Encoders live in [`GreeProtocol.kt`](app/src/main/java/com/emran/waltonac/GreeProtocol.kt)
+and [`Protocols.kt`](app/src/main/java/com/emran/waltonac/Protocols.kt). Note:
+on the Midea-family protocols the louvers are driven by a toggle command rather
+than absolute positions, so targeted vane positions are approximated (shown
+with `≈` on the display); Gree supports true positional swing.
 
 ## Getting the APK
 

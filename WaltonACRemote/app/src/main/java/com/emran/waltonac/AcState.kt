@@ -78,7 +78,8 @@ data class AcState(
     var vSwing: VerticalSwing = VerticalSwing.MIDDLE,
     var leftZone: ZoneAim = ZoneAim.CENTER,   // left vane group target
     var rightZone: ZoneAim = ZoneAim.CENTER,  // right vane group target
-    var roomTemp: Int = 28                    // shown on display; user-adjustable
+    var roomTemp: Int = 28,                   // shown on display; user-adjustable
+    var protocol: IrProtocol = IrProtocol.COOLIX
 ) {
     companion object {
         const val MIN_TEMP = 16
@@ -98,7 +99,8 @@ data class AcState(
                 vSwing = VerticalSwing.entries[p.getInt("vswing", VerticalSwing.MIDDLE.ordinal)],
                 leftZone = ZoneAim.entries[p.getInt("lzone", ZoneAim.CENTER.ordinal)],
                 rightZone = ZoneAim.entries[p.getInt("rzone", ZoneAim.CENTER.ordinal)],
-                roomTemp = p.getInt("roomTemp", 28)
+                roomTemp = p.getInt("roomTemp", 28),
+                protocol = IrProtocol.entries[p.getInt("protocol", IrProtocol.COOLIX.ordinal)]
             )
         }
     }
@@ -116,6 +118,7 @@ data class AcState(
             .putInt("lzone", leftZone.ordinal)
             .putInt("rzone", rightZone.ordinal)
             .putInt("roomTemp", roomTemp)
+            .putInt("protocol", protocol.ordinal)
             .apply()
     }
 

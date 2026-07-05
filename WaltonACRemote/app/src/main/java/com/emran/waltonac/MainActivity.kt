@@ -1,7 +1,10 @@
 package com.emran.waltonac
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -27,7 +30,9 @@ class MainActivity : Activity() {
     private val vSwingButtons = HashMap<VerticalSwing, Button>()
     private val leftZoneButtons = HashMap<ZoneAim, Button>()
     private val rightZoneButtons = HashMap<ZoneAim, Button>()
+    private val protocolButtons = HashMap<IrProtocol, Button>()
 
+    private val handler = Handler(Looper.getMainLooper())
     private var warnedNoIr = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,11 +79,14 @@ class MainActivity : Activity() {
 
         buildVSwingGrid(findViewById(R.id.vSwingContainer))
         buildZoneColumn(findViewById(R.id.leftZoneContainer), leftZoneButtons) { aim ->
-            state.leftZone = aim; commit()
+            state.leftZone = aim; commitSwing()
         }
         buildZoneColumn(findViewById(R.id.rightZoneContainer), rightZoneButtons) { aim ->
-            state.rightZone = aim; commit()
+            state.rightZone = aim; commitSwing()
         }
+
+        buildProtocolRow(findViewById(R.id.protocolContainer))
+        findViewById<Button>(R.id.btnFinder).setOnClickListener { runFinder(0) }
 
         refreshUi()
 
@@ -111,7 +119,7 @@ class MainActivity : Activity() {
             }
             for (option in row) {
                 val b = makeOptionButton(option.label)
-                b.setOnClickListener { state.vSwing = option; commit() }
+                b.setOnClickListener { state.vSwing = option; commitSwing() }
                 vSwingButtons[option] = b
                 rowLayout.addView(b)
             }
@@ -150,6 +158,55 @@ class MainActivity : Activity() {
         stateListAnimator = null
     }
 
+    private fun buildProtocolRow(container: LinearLayout) {
+        for (proto in IrProtocol.entries) {
+            val b = makeOptionButton(proto.label)
+            b.setOnClickListener {
+                state.protocol = proto
+                commit()
+                Toast.makeText(
+                    this, getString(R.string.protocol_set, proto.label), Toast.LENGTH_SHORT
+                ).show()
+            }
+            protocolButtons[proto] = b
+            container.addView(b)
+        }
+    }
+
+    /**
+     * "Find my AC": fires a test signal (power ON, cool, 24°C) with each
+     * protocol in turn until the user confirms the AC responded.
+     */
+    private fun runFinder(step: Int) {
+        val order = IrProtocol.entries
+        val proto = order[step % order.size]
+        val test = state.copy(
+            power = true, mode = AcMode.COOL, temp = 24,
+            fan = FanSpeed.AUTO, protocol = proto
+        )
+        ir.send(test)
+        val round = step / order.size + 1
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.finder_title, step + 1))
+            .setMessage(getString(R.string.finder_message, proto.label) +
+                    if (round > 1) "\n\n" + getString(R.string.finder_retry_hint) else "")
+            .setPositiveButton(R.string.finder_yes) { _, _ ->
+                state.protocol = proto
+                state.power = true; state.mode = AcMode.COOL
+                state.temp = 24; state.fan = FanSpeed.AUTO
+                state.save(this)
+                refreshUi()
+                display.flashSync()
+                Toast.makeText(
+                    this, getString(R.string.finder_locked, proto.label), Toast.LENGTH_LONG
+                ).show()
+            }
+            .setNegativeButton(R.string.finder_no) { _, _ -> runFinder(step + 1) }
+            .setNeutralButton(R.string.finder_stop, null)
+            .setCancelable(true)
+            .show()
+    }
+
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     // --------------------------------------------------------------- actions
@@ -162,6 +219,18 @@ class MainActivity : Activity() {
         refreshUi()
         if (!exact) {
             Toast.makeText(this, getString(R.string.approx_warning), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Swing change: transmit state, and on Midea-family protocols (where the
+     * louvers are driven by a separate toggle command, not the state frame)
+     * follow up with the swing-toggle frame after a short pause.
+     */
+    private fun commitSwing() {
+        commit()
+        AcEncoder.encodeSwingToggle(state)?.let { frame ->
+            handler.postDelayed({ ir.sendFrame(frame) }, 350)
         }
     }
 
@@ -183,7 +252,14 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ state
 
     private fun refreshUi() {
-        val (_, exact) = state.resolveHorizontal()
+        // On Midea-family protocols the hardware only supports toggle/step
+        // swing, so any targeted vane position is an approximation.
+        val exact = if (state.protocol == IrProtocol.GREE) {
+            state.resolveHorizontal().second
+        } else {
+            state.vSwing == VerticalSwing.FULL_SWING &&
+                    state.leftZone == ZoneAim.SWING && state.rightZone == ZoneAim.SWING
+        }
         display.update(state, exact)
 
         txtTemp.text = getString(R.string.temp_format, state.temp)
@@ -201,5 +277,6 @@ class MainActivity : Activity() {
         for ((option, b) in vSwingButtons) b.isSelected = state.vSwing == option
         for ((aim, b) in leftZoneButtons) b.isSelected = state.leftZone == aim
         for ((aim, b) in rightZoneButtons) b.isSelected = state.rightZone == aim
+        for ((proto, b) in protocolButtons) b.isSelected = state.protocol == proto
     }
 }

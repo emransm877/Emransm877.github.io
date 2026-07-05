@@ -24,5 +24,15 @@
     <string name="synced_toast">Full state broadcast to AC — display and AC are now in sync</string>
     <string name="approx_warning">AC hardware can\'t split that combo — sending closest supported pattern (shown with ≈ on display)</string>
     <string name="no_ir_warning">No IR blaster detected — running in demo mode (animations only)</string>
+    <string name="protocol_title">AC PROTOCOL — Walton uses different platforms; if the AC doesn\'t beep, tap FIND MY AC</string>
+    <string name="protocol_set">Protocol set to %s — every button now transmits in this format</string>
+    <string name="finder_button">🔍 FIND MY AC (auto-detect protocol)</string>
+    <string name="finder_title">Find my AC — test %d</string>
+    <string name="finder_message">A TEST signal (power ON · COOL · 24°C) was just sent using the %s protocol.\n\nDid the AC beep or turn on?</string>
+    <string name="finder_retry_hint">Tip: hold the TOP edge of the phone pointed straight at the AC, within 4–5 meters. You can also verify the IR blaster works by controlling your TV with Xiaomi\'s Mi Remote app.</string>
+    <string name="finder_yes">YES — it responded!</string>
+    <string name="finder_no">No — try next</string>
+    <string name="finder_stop">Stop</string>
+    <string name="finder_locked">Protocol locked: %s. The whole remote now speaks your AC\'s language.</string>
     <string name="footer_note">Every button press transmits the COMPLETE remote state (Gree-compatible protocol used by Walton split ACs), so the AC always matches this display. If the AC ever gets out of step (e.g. someone used the original remote), press SYNC once. IR is one-way: the AC cannot send its state back, so ROOM temperature is a display value you set to match your thermometer.</string>
 </resources>

@@ -49,6 +49,34 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- Protocol selection / auto-detect -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/protocol_title"
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/protocolContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal" />
+
+        <Button
+            android:id="@+id/btnFinder"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/btn_sync"
+            android:stateListAnimator="@null"
+            android:text="@string/finder_button"
+            android:textColor="@color/text_bright"
+            android:textStyle="bold" />
+
         <!-- Temperature -->
         <LinearLayout
             android:layout_width="match_parent"
