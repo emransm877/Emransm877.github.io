@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Walton AC Remote</string>
+    <string name="power_on">POWER  •  ON</string>
+    <string name="power_off">POWER  •  OFF</string>
+    <string name="sync">⇄ SYNC</string>
+    <string name="mode">MODE</string>
+    <string name="fan">FAN</string>
+    <string name="turbo">TURBO</string>
+    <string name="light">LIGHT</string>
+    <string name="sleep">SLEEP</string>
+    <string name="minus">−</string>
+    <string name="plus">+</string>
+    <string name="temp_placeholder">24°C</string>
+    <string name="temp_format">%d°C</string>
+    <string name="mode_format">MODE\n%s</string>
+    <string name="fan_format">FAN\n%s</string>
+    <string name="set_temp_label">SET TEMPERATURE</string>
+    <string name="room_temp_label">ROOM TEMPERATURE (set to match your thermometer)</string>
+    <string name="vswing_title">UP / DOWN SWING — positions &amp; sweep styles</string>
+    <string name="hswing_title">LEFT / RIGHT SWING — control each vane group individually</string>
+    <string name="left_vanes">LEFT VANES</string>
+    <string name="right_vanes">RIGHT VANES</string>
+    <string name="synced_toast">Full state broadcast to AC — display and AC are now in sync</string>
+    <string name="approx_warning">AC hardware can\'t split that combo — sending closest supported pattern (shown with ≈ on display)</string>
+    <string name="no_ir_warning">No IR blaster detected — running in demo mode (animations only)</string>
+    <string name="footer_note">Every button press transmits the COMPLETE remote state (Gree-compatible protocol used by Walton split ACs), so the AC always matches this display. If the AC ever gets out of step (e.g. someone used the original remote), press SYNC once. IR is one-way: the AC cannot send its state back, so ROOM temperature is a display value you set to match your thermometer.</string>
+</resources>
