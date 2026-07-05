@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BT Keyboard</string>
+
+    <string name="hid_device_name">Phone BT Keyboard</string>
+    <string name="hid_device_description">Android phone acting as a Bluetooth keyboard</string>
+
+    <string name="status_starting">Starting Bluetooth keyboard…</string>
+    <string name="status_ready">Ready — pick your TV box and connect</string>
+    <string name="status_connecting">Connecting to %1$s…</string>
+    <string name="status_connected">Connected to %1$s — start typing!</string>
+    <string name="status_no_bluetooth">This device has no Bluetooth</string>
+    <string name="status_bluetooth_off">Bluetooth is turned off — enable it and reopen the app</string>
+    <string name="status_no_permission">Bluetooth permission denied — grant it in Settings to use the keyboard</string>
+
+    <string name="label_device">Paired device (your TV box):</string>
+    <string name="no_paired_devices">No paired devices — tap Pair</string>
+
+    <string name="button_connect">Connect</string>
+    <string name="button_disconnect">Disconnect</string>
+    <string name="button_refresh">Refresh</string>
+    <string name="button_pair">Pair…</string>
+    <string name="button_send">Send</string>
+    <string name="button_paste_send">Paste &amp; send</string>
+    <string name="button_clear">Clear</string>
+
+    <string name="hint_input">Type or paste text here, then tap Send</string>
+    <string name="switch_live_typing">Live typing (send each key as you type)</string>
+
+    <string name="key_esc">Esc</string>
+    <string name="key_tab">Tab</string>
+    <string name="key_backspace">⌫</string>
+    <string name="key_delete">Del</string>
+    <string name="key_enter">Enter</string>
+    <string name="key_space">Space</string>
+    <string name="key_home">Home</string>
+    <string name="key_end">End</string>
+    <string name="key_up">▲</string>
+    <string name="key_down">▼</string>
+    <string name="key_left">◀</string>
+    <string name="key_right">▶</string>
+
+    <string name="toast_enable_bluetooth">Please turn on Bluetooth, then reopen the app</string>
+    <string name="toast_not_registered">Keyboard not ready yet — trying again…</string>
+    <string name="toast_pair_first">Pair your phone with the TV box first (tap Pair…)</string>
+    <string name="toast_connect_failed">Could not start connection — try again</string>
+    <string name="toast_not_connected">Not connected to the TV box yet</string>
+    <string name="toast_clipboard_empty">Clipboard is empty</string>
+    <string name="toast_skipped_chars">%1$d character(s) could not be typed</string>
+
+    <string name="notification_channel_name">Keyboard connection</string>
+    <string name="notification_title">Bluetooth keyboard active</string>
+    <string name="notification_text">Connected to %1$s</string>
+    <string name="notification_unknown_device">TV box</string>
+
+    <string name="help_text">How to use:\n1. On your TV box, open Settings → Bluetooth (or Remotes &amp; accessories) and start pairing.\n2. Tap Pair… above and pair your phone with the TV box from the phone’s Bluetooth settings.\n3. Back in this app, tap Refresh, pick the TV box, then Connect.\n4. Open any app on the TV (browser, Tor, search…), focus a text field, and type or paste here.\nThe TV sees your phone as a real hardware keyboard, so it works inside every app.</string>
+</resources>
