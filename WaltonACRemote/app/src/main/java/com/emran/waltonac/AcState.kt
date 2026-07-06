@@ -45,7 +45,9 @@ data class AcState(
     var turbo: Boolean = false,
     var eco: Boolean = false,
     var health: Boolean = false,
-    var roomTemp: Int = 28,           // display-only (IR is one-way)
+    // Display-only. IR is one-way so the AC cannot report its real sensor value;
+    // this is a manual number the user sets to match their own thermometer.
+    var roomTemp: Int = 24,
     // 38 kHz is what actually fires on this phone's blaster (76 kHz, the value
     // in the official app, is out of the emitter's range and stays silent).
     var carrierHz: Int = 38000
@@ -68,7 +70,7 @@ data class AcState(
                 turbo = p.getBoolean("turbo", false),
                 eco = p.getBoolean("eco", false),
                 health = p.getBoolean("health", false),
-                roomTemp = p.getInt("roomTemp", 28),
+                roomTemp = p.getInt("roomTemp", 24),
                 carrierHz = p.getInt("carrierHz", 38000)
             )
         }

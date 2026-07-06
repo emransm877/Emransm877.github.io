@@ -67,7 +67,13 @@ class MainActivity : Activity() {
 
         btnPower.setOnClickListener {
             state.power = !state.power
-            fire(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
+            if (state.power) {
+                // Turning on: power on, then apply the app's mode + temperature
+                // so the AC matches the screen instead of the snapshot's 25 °C.
+                sendSequence(listOf(WaltonCodes.POWER_ON, state.mode.frame(), state.tempFrame()))
+            } else {
+                fire(WaltonCodes.POWER_OFF)
+            }
         }
         findViewById<Button>(R.id.btnSync).setOnClickListener { sync() }
 
@@ -149,18 +155,24 @@ class MainActivity : Activity() {
      * frame's built-in 25 °C.
      */
     private fun sync() {
-        val gap = 450L
         val queue = ArrayList<IntArray>()
         queue.add(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
         if (state.power) {
             queue.add(state.mode.frame())
             queue.add(state.tempFrame())   // last so it overrides the mode's 25 °C
         }
-        for ((i, frame) in queue.withIndex()) {
-            handler.postDelayed({ ir.send(frame, state.carrierHz); refreshUi() }, i * gap)
-        }
+        sendSequence(queue)
         display.flashSync()
         Toast.makeText(this, getString(R.string.synced_toast), Toast.LENGTH_SHORT).show()
+    }
+
+    /** Send several full-state frames ~450 ms apart so the AC decodes each one. */
+    private fun sendSequence(frames: List<IntArray>) {
+        val gap = 450L
+        for ((i, frame) in frames.withIndex()) {
+            handler.postDelayed({ ir.send(frame, state.carrierHz); refreshUi() }, i * gap)
+        }
+        state.save(this)
     }
 
     private fun refreshUi() {
