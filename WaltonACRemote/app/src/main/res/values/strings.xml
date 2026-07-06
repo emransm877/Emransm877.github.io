@@ -24,5 +24,10 @@
     <string name="extras_title">EXTRAS</string>
     <string name="synced_toast">Re-sent power, mode and temperature to the AC</string>
     <string name="no_ir_warning">No IR blaster detected — running in demo mode (animations only). Check that your phone\'s IR works in Mi Remote.</string>
+    <string name="diag_title">DIAGNOSTICS — tap CARRIER to try different frequencies if the AC stays silent</string>
+    <string name="carrier_placeholder">CARRIER: 76 kHz (tap to change)</string>
+    <string name="carrier_format">CARRIER: %d kHz (tap to change)</string>
+    <string name="diag_placeholder">press a button to test…</string>
+    <string name="diag_format">blaster present: %1$s\nphone supports: %2$s Hz\nlast signal: %3$s</string>
     <string name="footer_note">This remote sends the exact IR signals used by the official Walton remote (76 kHz carrier), so your Walton AC responds just like it does to the original. Fan speed steps the AC\'s own speed each press. Swing is per-axis on/off — that is all the AC\'s IR supports. IR is one-way, so ROOM temperature is a display value you set to match your thermometer; press SYNC if the AC ever gets out of step.</string>
 </resources>

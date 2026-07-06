@@ -45,7 +45,8 @@ data class AcState(
     var turbo: Boolean = false,
     var eco: Boolean = false,
     var health: Boolean = false,
-    var roomTemp: Int = 28            // display-only (IR is one-way)
+    var roomTemp: Int = 28,           // display-only (IR is one-way)
+    var carrierHz: Int = 76000        // official app default; toggle if unsupported
 ) {
     companion object {
         const val MIN_TEMP = 16
@@ -65,7 +66,8 @@ data class AcState(
                 turbo = p.getBoolean("turbo", false),
                 eco = p.getBoolean("eco", false),
                 health = p.getBoolean("health", false),
-                roomTemp = p.getInt("roomTemp", 28)
+                roomTemp = p.getInt("roomTemp", 28),
+                carrierHz = p.getInt("carrierHz", 76000)
             )
         }
     }
@@ -83,6 +85,7 @@ data class AcState(
             .putBoolean("eco", eco)
             .putBoolean("health", health)
             .putInt("roomTemp", roomTemp)
+            .putInt("carrierHz", carrierHz)
             .apply()
     }
 

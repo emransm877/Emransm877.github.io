@@ -306,6 +306,39 @@
                 android:textSize="18sp" />
         </LinearLayout>
 
+        <!-- Diagnostics / carrier -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/diag_title"
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnCarrier"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/btn_option"
+            android:stateListAnimator="@null"
+            android:text="@string/carrier_placeholder"
+            android:textColor="@color/text_bright"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/txtDiag"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/panel_bg"
+            android:fontFamily="monospace"
+            android:padding="10dp"
+            android:text="@string/diag_placeholder"
+            android:textColor="@color/accent"
+            android:textSize="11sp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -23,6 +23,12 @@ class MainActivity : Activity() {
     private lateinit var btnTurbo: Button
     private lateinit var btnEco: Button
     private lateinit var btnHealth: Button
+    private lateinit var btnCarrier: Button
+    private lateinit var txtDiag: TextView
+
+    // Carriers to offer: 76 kHz is what the official app sends; 38 kHz is the
+    // standard many blasters actually support if 76 kHz is out of range.
+    private val carriers = intArrayOf(76000, 38000, 56000, 33000)
 
     private var warnedNoIr = false
 
@@ -45,6 +51,16 @@ class MainActivity : Activity() {
         btnTurbo = findViewById(R.id.btnTurbo)
         btnEco = findViewById(R.id.btnEco)
         btnHealth = findViewById(R.id.btnHealth)
+        btnCarrier = findViewById(R.id.btnCarrier)
+        txtDiag = findViewById(R.id.txtDiag)
+
+        btnCarrier.setOnClickListener {
+            val idx = carriers.indexOf(state.carrierHz).let { if (it < 0) 0 else it }
+            state.carrierHz = carriers[(idx + 1) % carriers.size]
+            state.save(this)
+            // Fire a POWER test at the new carrier so the user hears it immediately.
+            fire(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
+        }
 
         btnPower.setOnClickListener {
             state.power = !state.power
@@ -95,22 +111,18 @@ class MainActivity : Activity() {
 
     /** Transmit a captured Walton frame, then persist + refresh the display. */
     private fun fire(pattern: IntArray) {
-        val ok = ir.send(pattern)
+        ir.send(pattern, state.carrierHz)
         state.save(this)
         refreshUi()
-        if (!ok && !warnedNoIr) {
-            Toast.makeText(this, getString(R.string.no_ir_warning), Toast.LENGTH_LONG).show()
-            warnedNoIr = true
-        }
     }
 
     /** Re-send the current power + mode + temperature so the AC matches the app. */
     private fun sync() {
-        ir.send(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
-        ir.send(state.mode.frame())
-        ir.send(state.tempFrame())
+        ir.send(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF, state.carrierHz)
+        ir.send(state.mode.frame(), state.carrierHz)
+        ir.send(state.tempFrame(), state.carrierHz)
         display.flashSync()
-        Toast.makeText(this, getString(R.string.synced_toast), Toast.LENGTH_SHORT).show()
+        refreshUi()
     }
 
     private fun refreshUi() {
@@ -130,5 +142,13 @@ class MainActivity : Activity() {
         btnTurbo.isSelected = state.turbo
         btnEco.isSelected = state.eco
         btnHealth.isSelected = state.health
+
+        btnCarrier.text = getString(R.string.carrier_format, state.carrierHz / 1000)
+        txtDiag.text = getString(
+            R.string.diag_format,
+            if (ir.available) "yes" else "NO",
+            ir.supportedCarriers(),
+            ir.lastStatus
+        )
     }
 }
