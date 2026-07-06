@@ -2,6 +2,8 @@ package com.emran.waltonac
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -30,6 +32,7 @@ class MainActivity : Activity() {
     // standard many blasters actually support if 76 kHz is out of range.
     private val carriers = intArrayOf(38000, 76000, 56000, 33000, 40000)
 
+    private val handler = Handler(Looper.getMainLooper())
     private var warnedNoIr = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,13 +119,26 @@ class MainActivity : Activity() {
         refreshUi()
     }
 
-    /** Re-send the current power + mode + temperature so the AC matches the app. */
+    /**
+     * Re-send power → mode → temperature so the AC matches the app. Each frame
+     * is a full-state snapshot, and the mode snapshot carries 25 °C, so we send
+     * the real temperature LAST and space the frames ~450 ms apart — otherwise
+     * the AC's IR receiver drops the trailing frames and stays at the mode
+     * frame's built-in 25 °C.
+     */
     private fun sync() {
-        ir.send(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF, state.carrierHz)
-        ir.send(state.mode.frame(), state.carrierHz)
-        ir.send(state.tempFrame(), state.carrierHz)
+        val gap = 450L
+        val queue = ArrayList<IntArray>()
+        queue.add(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
+        if (state.power) {
+            queue.add(state.mode.frame())
+            queue.add(state.tempFrame())   // last so it overrides the mode's 25 °C
+        }
+        for ((i, frame) in queue.withIndex()) {
+            handler.postDelayed({ ir.send(frame, state.carrierHz); refreshUi() }, i * gap)
+        }
         display.flashSync()
-        refreshUi()
+        Toast.makeText(this, getString(R.string.synced_toast), Toast.LENGTH_SHORT).show()
     }
 
     private fun refreshUi() {
