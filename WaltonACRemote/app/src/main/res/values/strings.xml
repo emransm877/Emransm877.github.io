@@ -28,7 +28,7 @@
     <string name="protocol_set">Protocol set to %s — every button now transmits in this format</string>
     <string name="finder_button">🔍 FIND MY AC (auto-detect protocol)</string>
     <string name="finder_title">Find my AC — test %d</string>
-    <string name="finder_message">A TEST signal (power ON · COOL · 24°C) was just sent using the %s protocol.\n\nDid the AC beep or turn on?</string>
+    <string name="finder_message">A TEST signal (power ON · 24°C) was just sent.\n\nFormat: %s\n\nDid the AC beep or turn on?</string>
     <string name="finder_retry_hint">Tip: hold the TOP edge of the phone pointed straight at the AC, within 4–5 meters. You can also verify the IR blaster works by controlling your TV with Xiaomi\'s Mi Remote app.</string>
     <string name="finder_yes">YES — it responded!</string>
     <string name="finder_no">No — try next</string>

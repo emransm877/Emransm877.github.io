@@ -173,32 +173,56 @@ class MainActivity : Activity() {
         }
     }
 
+    /** One auto-detect experiment: a label plus the exact state it transmits. */
+    private class FinderTest(val label: String, val state: AcState)
+
     /**
-     * "Find my AC": fires a test signal (power ON, cool, 24°C) with each
-     * protocol in turn until the user confirms the AC responded.
+     * "Find my AC" lab. Coolix clones (which most Walton units are) accept the
+     * OFF frame but disagree on field encodings inside the ON frame, so the
+     * lab tests real field variants — different auto-fan codes, fixed fan
+     * speeds, auto mode, extra frame repeats — then the other two protocol
+     * families. A YES answer applies that exact working configuration.
      */
-    private fun runFinder(step: Int) {
-        val order = IrProtocol.entries
-        val proto = order[step % order.size]
-        val test = state.copy(
-            power = true, mode = AcMode.COOL, temp = 24,
-            fan = FanSpeed.AUTO, protocol = proto
+    private fun finderTests(): List<FinderTest> {
+        fun coolix(fan: FanSpeed, autoCode: Int, reps: Int, mode: AcMode = AcMode.COOL) =
+            state.copy(
+                power = true, mode = mode, temp = 24, fan = fan,
+                protocol = IrProtocol.COOLIX,
+                coolixFanAutoCode = autoCode, coolixRepeats = reps
+            )
+        return listOf(
+            FinderTest("MIDEA-24 · cool · fan-auto A", coolix(FanSpeed.AUTO, 0b101, 2)),
+            FinderTest("MIDEA-24 · cool · fan-auto B", coolix(FanSpeed.AUTO, 0b000, 2)),
+            FinderTest("MIDEA-24 · cool · fan MED", coolix(FanSpeed.MED, 0b101, 2)),
+            FinderTest("MIDEA-24 · cool · fan HIGH", coolix(FanSpeed.HIGH, 0b101, 2)),
+            FinderTest("MIDEA-24 · cool · fan LOW", coolix(FanSpeed.LOW, 0b101, 2)),
+            FinderTest("MIDEA-24 · AUTO mode", coolix(FanSpeed.AUTO, 0b101, 2, AcMode.AUTO)),
+            FinderTest("MIDEA-24 · 4x repeat", coolix(FanSpeed.AUTO, 0b101, 4)),
+            FinderTest("GREE", state.copy(
+                power = true, mode = AcMode.COOL, temp = 24,
+                fan = FanSpeed.AUTO, protocol = IrProtocol.GREE)),
+            FinderTest("MIDEA-48", state.copy(
+                power = true, mode = AcMode.COOL, temp = 24,
+                fan = FanSpeed.AUTO, protocol = IrProtocol.MIDEA))
         )
-        ir.send(test)
-        val round = step / order.size + 1
+    }
+
+    private fun runFinder(step: Int) {
+        val tests = finderTests()
+        val test = tests[step % tests.size]
+        ir.send(test.state)
+        val round = step / tests.size + 1
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.finder_title, step + 1))
-            .setMessage(getString(R.string.finder_message, proto.label) +
+            .setMessage(getString(R.string.finder_message, test.label) +
                     if (round > 1) "\n\n" + getString(R.string.finder_retry_hint) else "")
             .setPositiveButton(R.string.finder_yes) { _, _ ->
-                state.protocol = proto
-                state.power = true; state.mode = AcMode.COOL
-                state.temp = 24; state.fan = FanSpeed.AUTO
+                state = test.state.copy(roomTemp = state.roomTemp)
                 state.save(this)
                 refreshUi()
                 display.flashSync()
                 Toast.makeText(
-                    this, getString(R.string.finder_locked, proto.label), Toast.LENGTH_LONG
+                    this, getString(R.string.finder_locked, test.label), Toast.LENGTH_LONG
                 ).show()
             }
             .setNegativeButton(R.string.finder_no) { _, _ -> runFinder(step + 1) }

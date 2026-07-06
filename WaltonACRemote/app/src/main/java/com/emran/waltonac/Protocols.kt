@@ -65,9 +65,10 @@ object CoolixEncoder {
         0b0100, 0b1100, 0b1101, 0b1001, 0b1000, 0b1010, 0b1011
     )
 
-    fun encode(s: AcState): IrFrame = IrFrame(CARRIER, patternFor(stateMessage(s)))
+    fun encode(s: AcState): IrFrame =
+        IrFrame(CARRIER, patternFor(stateMessage(s), s.coolixRepeats))
 
-    fun swingToggle(): IrFrame = IrFrame(CARRIER, patternFor(MSG_SWING))
+    fun swingToggle(): IrFrame = IrFrame(CARRIER, patternFor(MSG_SWING, 2))
 
     private fun stateMessage(s: AcState): Int {
         if (!s.power) return MSG_OFF
@@ -86,12 +87,14 @@ object CoolixEncoder {
             }
         }
         // Auto/Dry require the "auto0" fan value; other modes use real speeds.
+        // The "auto fan" code differs between Coolix clones, so it comes from
+        // the state (discovered by the Find-My-AC lab).
         val fanBits = when {
             s.mode == AcMode.AUTO || s.mode == AcMode.DRY -> 0b000
             s.fan == FanSpeed.LOW -> 0b100
             s.fan == FanSpeed.MED -> 0b010
             s.fan == FanSpeed.HIGH -> 0b001
-            else -> 0b101 // auto
+            else -> s.coolixFanAutoCode and 0b111
         }
 
         val low = (tempCode shl 4) or (modeBits shl 2)
@@ -99,9 +102,9 @@ object CoolixEncoder {
         return (0xB2 shl 16) or (mid shl 8) or low
     }
 
-    private fun patternFor(msg: Int): IntArray {
+    private fun patternFor(msg: Int, repeats: Int): IntArray {
         val out = ArrayList<Int>(200)
-        repeat(2) {
+        repeat(repeats.coerceIn(1, 6)) {
             out.add(HDR_MARK); out.add(HDR_SPACE)
             for (shift in intArrayOf(16, 8, 0)) {
                 val b = (msg shr shift) and 0xFF

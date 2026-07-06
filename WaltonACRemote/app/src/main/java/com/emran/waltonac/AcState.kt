@@ -79,7 +79,11 @@ data class AcState(
     var leftZone: ZoneAim = ZoneAim.CENTER,   // left vane group target
     var rightZone: ZoneAim = ZoneAim.CENTER,  // right vane group target
     var roomTemp: Int = 28,                   // shown on display; user-adjustable
-    var protocol: IrProtocol = IrProtocol.COOLIX
+    var protocol: IrProtocol = IrProtocol.COOLIX,
+    // Coolix clones disagree on the "auto fan" bit code and how many times a
+    // frame must be sent; the Find-My-AC lab discovers and stores both.
+    var coolixFanAutoCode: Int = 0b101,
+    var coolixRepeats: Int = 2
 ) {
     companion object {
         const val MIN_TEMP = 16
@@ -100,7 +104,9 @@ data class AcState(
                 leftZone = ZoneAim.entries[p.getInt("lzone", ZoneAim.CENTER.ordinal)],
                 rightZone = ZoneAim.entries[p.getInt("rzone", ZoneAim.CENTER.ordinal)],
                 roomTemp = p.getInt("roomTemp", 28),
-                protocol = IrProtocol.entries[p.getInt("protocol", IrProtocol.COOLIX.ordinal)]
+                protocol = IrProtocol.entries[p.getInt("protocol", IrProtocol.COOLIX.ordinal)],
+                coolixFanAutoCode = p.getInt("coolixFanAuto", 0b101),
+                coolixRepeats = p.getInt("coolixRepeats", 2)
             )
         }
     }
@@ -119,6 +125,8 @@ data class AcState(
             .putInt("rzone", rightZone.ordinal)
             .putInt("roomTemp", roomTemp)
             .putInt("protocol", protocol.ordinal)
+            .putInt("coolixFanAuto", coolixFanAutoCode)
+            .putInt("coolixRepeats", coolixRepeats)
             .apply()
     }
 
