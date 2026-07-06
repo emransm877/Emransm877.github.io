@@ -17,7 +17,6 @@
             android:layout_width="match_parent"
             android:layout_height="330dp" />
 
-        <!-- Power / Sync -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -48,34 +47,6 @@
                 android:textColor="@color/text_bright"
                 android:textStyle="bold" />
         </LinearLayout>
-
-        <!-- Protocol selection / auto-detect -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/protocol_title"
-            android:textColor="@color/text_dim"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:id="@+id/protocolContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:orientation="horizontal" />
-
-        <Button
-            android:id="@+id/btnFinder"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:layout_marginTop="4dp"
-            android:background="@drawable/btn_sync"
-            android:stateListAnimator="@null"
-            android:text="@string/finder_button"
-            android:textColor="@color/text_bright"
-            android:textStyle="bold" />
 
         <!-- Temperature -->
         <LinearLayout
@@ -134,7 +105,7 @@
                 android:textSize="22sp" />
         </LinearLayout>
 
-        <!-- Mode / Fan / Turbo / Light / Sleep -->
+        <!-- Mode / Fan -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -144,26 +115,84 @@
             <Button
                 android:id="@+id/btnMode"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="54dp"
                 android:layout_margin="3dp"
-                android:layout_weight="1.2"
+                android:layout_weight="1"
                 android:background="@drawable/btn_option"
                 android:stateListAnimator="@null"
                 android:text="@string/mode"
                 android:textColor="@color/option_text"
-                android:textSize="12sp" />
+                android:textSize="13sp" />
 
             <Button
                 android:id="@+id/btnFan"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="54dp"
                 android:layout_margin="3dp"
-                android:layout_weight="1.2"
+                android:layout_weight="1"
                 android:background="@drawable/btn_option"
                 android:stateListAnimator="@null"
                 android:text="@string/fan"
                 android:textColor="@color/option_text"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Swing -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/swing_title"
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnVSwing"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/btn_option"
+                android:stateListAnimator="@null"
+                android:text="@string/vswing"
+                android:textColor="@color/option_text"
                 android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnHSwing"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/btn_option"
+                android:stateListAnimator="@null"
+                android:text="@string/hswing"
+                android:textColor="@color/option_text"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Extras -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/extras_title"
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
 
             <Button
                 android:id="@+id/btnTurbo"
@@ -178,7 +207,31 @@
                 android:textSize="12sp" />
 
             <Button
-                android:id="@+id/btnLight"
+                android:id="@+id/btnEco"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/btn_option"
+                android:stateListAnimator="@null"
+                android:text="@string/eco"
+                android:textColor="@color/option_text"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnHealth"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/btn_option"
+                android:stateListAnimator="@null"
+                android:text="@string/health"
+                android:textColor="@color/option_text"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnDisplay"
                 android:layout_width="0dp"
                 android:layout_height="50dp"
                 android:layout_margin="3dp"
@@ -188,104 +241,6 @@
                 android:text="@string/light"
                 android:textColor="@color/option_text"
                 android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnSleep"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_margin="3dp"
-                android:layout_weight="1"
-                android:background="@drawable/btn_option"
-                android:stateListAnimator="@null"
-                android:text="@string/sleep"
-                android:textColor="@color/option_text"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- Vertical (up/down) swing -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="@string/vswing_title"
-            android:textColor="@color/text_dim"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:id="@+id/vSwingContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:background="@drawable/panel_bg"
-            android:orientation="vertical"
-            android:padding="6dp" />
-
-        <!-- Horizontal: independent left / right vane groups -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="@string/hswing_title"
-            android:textColor="@color/text_dim"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:background="@drawable/panel_bg"
-            android:orientation="horizontal"
-            android:padding="6dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center_horizontal"
-                    android:text="@string/left_vanes"
-                    android:textColor="@color/text_dim"
-                    android:textSize="11sp" />
-
-                <LinearLayout
-                    android:id="@+id/leftZoneContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="match_parent"
-                android:layout_marginHorizontal="4dp"
-                android:background="@color/divider" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center_horizontal"
-                    android:text="@string/right_vanes"
-                    android:textColor="@color/text_dim"
-                    android:textSize="11sp" />
-
-                <LinearLayout
-                    android:id="@+id/rightZoneContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </LinearLayout>
         </LinearLayout>
 
         <!-- Room temperature -->

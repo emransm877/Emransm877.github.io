@@ -29,23 +29,25 @@ animated display that always shows what the AC was told to do.
   to the phone), so the ROOM readout is a value you set to match your room
   thermometer; it's kept on the display next to the set temperature.
 
-## Protocols & auto-detect
+## How it works — real captured signals
 
-Walton has shipped indoor units on several Chinese platforms, so the app speaks
-three protocol families and includes a **🔍 FIND MY AC** wizard that fires a
-test signal with each protocol until you confirm the AC beeped, then locks it:
+The IR frames in [`WaltonCodes.kt`](app/src/main/java/com/emran/waltonac/WaltonCodes.kt)
+are the **exact signals used by the official Walton AC Remote app**
+(`com.lazycoder.waltonacremote`), extracted from its Dart AOT snapshot. Each
+command (power on/off, every mode, every temperature 16–30 °C, swing, turbo,
+eco, health, display, fan-step) is a raw mark/space pattern in microseconds,
+transmitted on the **76 kHz carrier** the official remote uses. Because these
+are the AC's own signals, your Walton responds exactly as it does to the
+original remote.
 
-| App name | Family | Used by |
-|----------|--------|---------|
-| MIDEA-24 | Coolix 24-bit | Most Walton splits (RG52-clone remotes) — the default |
-| GREE     | Gree YAW1F 64-bit | Some Walton inverter models |
-| MIDEA-48 | Midea 48-bit | Newer Midea-platform units |
+### What the hardware supports
 
-Encoders live in [`GreeProtocol.kt`](app/src/main/java/com/emran/waltonac/GreeProtocol.kt)
-and [`Protocols.kt`](app/src/main/java/com/emran/waltonac/Protocols.kt). Note:
-on the Midea-family protocols the louvers are driven by a toggle command rather
-than absolute positions, so targeted vane positions are approximated (shown
-with `≈` on the display); Gree supports true positional swing.
+Walton's IR protocol exposes swing as **on/off per axis** (up/down and
+left/right) and fan speed as a **step** command that advances the AC's own fan
+setting — it has no IR codes for aiming individual vanes to fixed angles or
+splitting left/right sides independently. The original remote doesn't have those
+buttons either, so no app can send them to this AC. This remote gives you every
+function the AC actually understands, plus the animated live display.
 
 ## Getting the APK
 

@@ -1,14 +1,8 @@
 package com.emran.waltonac
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.Gravity
-import android.view.View
 import android.widget.Button
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
@@ -23,16 +17,13 @@ class MainActivity : Activity() {
     private lateinit var btnPower: Button
     private lateinit var btnMode: Button
     private lateinit var btnFan: Button
+    private lateinit var btnVSwing: Button
+    private lateinit var btnHSwing: Button
+    private lateinit var btnDisplay: Button
     private lateinit var btnTurbo: Button
-    private lateinit var btnLight: Button
-    private lateinit var btnSleep: Button
+    private lateinit var btnEco: Button
+    private lateinit var btnHealth: Button
 
-    private val vSwingButtons = HashMap<VerticalSwing, Button>()
-    private val leftZoneButtons = HashMap<ZoneAim, Button>()
-    private val rightZoneButtons = HashMap<ZoneAim, Button>()
-    private val protocolButtons = HashMap<IrProtocol, Button>()
-
-    private val handler = Handler(Looper.getMainLooper())
     private var warnedNoIr = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,28 +39,45 @@ class MainActivity : Activity() {
         btnPower = findViewById(R.id.btnPower)
         btnMode = findViewById(R.id.btnMode)
         btnFan = findViewById(R.id.btnFan)
+        btnVSwing = findViewById(R.id.btnVSwing)
+        btnHSwing = findViewById(R.id.btnHSwing)
+        btnDisplay = findViewById(R.id.btnDisplay)
         btnTurbo = findViewById(R.id.btnTurbo)
-        btnLight = findViewById(R.id.btnLight)
-        btnSleep = findViewById(R.id.btnSleep)
+        btnEco = findViewById(R.id.btnEco)
+        btnHealth = findViewById(R.id.btnHealth)
 
-        btnPower.setOnClickListener { state.power = !state.power; commit() }
+        btnPower.setOnClickListener {
+            state.power = !state.power
+            fire(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
+        }
         findViewById<Button>(R.id.btnSync).setOnClickListener { sync() }
 
         findViewById<Button>(R.id.btnTempMinus).setOnClickListener {
-            if (state.temp > AcState.MIN_TEMP) { state.temp--; commit() }
+            if (state.temp > AcState.MIN_TEMP) { state.temp--; fire(state.tempFrame()) }
         }
         findViewById<Button>(R.id.btnTempPlus).setOnClickListener {
-            if (state.temp < AcState.MAX_TEMP) { state.temp++; commit() }
+            if (state.temp < AcState.MAX_TEMP) { state.temp++; fire(state.tempFrame()) }
         }
 
-        btnMode.setOnClickListener { state.mode = state.mode.next(); commit() }
-        btnFan.setOnClickListener { state.fan = state.fan.next(); commit() }
-        btnTurbo.setOnClickListener { state.turbo = !state.turbo; commit() }
-        btnLight.setOnClickListener { state.light = !state.light; commit() }
-        btnSleep.setOnClickListener { state.sleep = !state.sleep; commit() }
+        btnMode.setOnClickListener { state.mode = state.mode.next(); fire(state.mode.frame()) }
+        btnFan.setOnClickListener { state.fan = state.fan.next(); fire(WaltonCodes.FAN_STEP) }
 
-        // Room temperature is a local display value (IR is one-way, the AC
-        // cannot report back) — adjust it to match your room thermometer.
+        btnVSwing.setOnClickListener {
+            state.vSwing = !state.vSwing
+            fire(if (state.vSwing) WaltonCodes.VSWING_ON else WaltonCodes.VSWING_OFF)
+        }
+        btnHSwing.setOnClickListener {
+            state.hSwing = !state.hSwing
+            fire(if (state.hSwing) WaltonCodes.HSWING_ON else WaltonCodes.HSWING_OFF)
+        }
+        btnDisplay.setOnClickListener {
+            state.display = !state.display
+            fire(if (state.display) WaltonCodes.DISPLAY_ON else WaltonCodes.DISPLAY_OFF)
+        }
+        btnTurbo.setOnClickListener { state.turbo = !state.turbo; fire(WaltonCodes.TURBO) }
+        btnEco.setOnClickListener { state.eco = !state.eco; fire(WaltonCodes.ECO) }
+        btnHealth.setOnClickListener { state.health = !state.health; fire(WaltonCodes.HEALTH) }
+
         findViewById<Button>(R.id.btnRoomMinus).setOnClickListener {
             state.roomTemp--; refreshUi(); state.save(this)
         }
@@ -77,214 +85,36 @@ class MainActivity : Activity() {
             state.roomTemp++; refreshUi(); state.save(this)
         }
 
-        buildVSwingGrid(findViewById(R.id.vSwingContainer))
-        buildZoneColumn(findViewById(R.id.leftZoneContainer), leftZoneButtons) { aim ->
-            state.leftZone = aim; commitSwing()
-        }
-        buildZoneColumn(findViewById(R.id.rightZoneContainer), rightZoneButtons) { aim ->
-            state.rightZone = aim; commitSwing()
-        }
-
-        buildProtocolRow(findViewById(R.id.protocolContainer))
-        findViewById<Button>(R.id.btnFinder).setOnClickListener { runFinder(0) }
-
         refreshUi()
 
         if (!ir.available) {
-            Toast.makeText(
-                this,
-                getString(R.string.no_ir_warning),
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(this, getString(R.string.no_ir_warning), Toast.LENGTH_LONG).show()
             warnedNoIr = true
         }
     }
 
-    // ------------------------------------------------------------- UI builders
-
-    private fun buildVSwingGrid(container: LinearLayout) {
-        val rows = listOf(
-            listOf(VerticalSwing.FULL_SWING, VerticalSwing.SWEEP_UPPER,
-                VerticalSwing.SWEEP_MIDDLE, VerticalSwing.SWEEP_LOWER),
-            listOf(VerticalSwing.TOP, VerticalSwing.UPPER_MID, VerticalSwing.MIDDLE,
-                VerticalSwing.LOWER_MID, VerticalSwing.BOTTOM)
-        )
-        for (row in rows) {
-            val rowLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-            for (option in row) {
-                val b = makeOptionButton(option.label)
-                b.setOnClickListener { state.vSwing = option; commitSwing() }
-                vSwingButtons[option] = b
-                rowLayout.addView(b)
-            }
-            container.addView(rowLayout)
-        }
-    }
-
-    private fun buildZoneColumn(
-        container: LinearLayout,
-        map: HashMap<ZoneAim, Button>,
-        onPick: (ZoneAim) -> Unit
-    ) {
-        for (aim in ZoneAim.entries) {
-            val b = makeOptionButton(aim.label)
-            b.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
-            b.setOnClickListener { onPick(aim) }
-            map[aim] = b
-            container.addView(b)
-        }
-    }
-
-    private fun makeOptionButton(label: String): Button = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 12f
-        gravity = Gravity.CENTER
-        setPadding(dp(4), dp(10), dp(4), dp(10))
-        setBackgroundResource(R.drawable.btn_option)
-        setTextColor(resources.getColorStateList(R.color.option_text))
-        layoutParams = LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-        ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
-        stateListAnimator = null
-    }
-
-    private fun buildProtocolRow(container: LinearLayout) {
-        for (proto in IrProtocol.entries) {
-            val b = makeOptionButton(proto.label)
-            b.setOnClickListener {
-                state.protocol = proto
-                commit()
-                Toast.makeText(
-                    this, getString(R.string.protocol_set, proto.label), Toast.LENGTH_SHORT
-                ).show()
-            }
-            protocolButtons[proto] = b
-            container.addView(b)
-        }
-    }
-
-    /** One auto-detect experiment: a label plus the exact state it transmits. */
-    private class FinderTest(val label: String, val state: AcState)
-
-    /**
-     * "Find my AC" lab. Coolix clones (which most Walton units are) accept the
-     * OFF frame but disagree on field encodings inside the ON frame, so the
-     * lab tests real field variants — different auto-fan codes, fixed fan
-     * speeds, auto mode, extra frame repeats — then the other two protocol
-     * families. A YES answer applies that exact working configuration.
-     */
-    private fun finderTests(): List<FinderTest> {
-        fun coolix(fan: FanSpeed, autoCode: Int, reps: Int, mode: AcMode = AcMode.COOL) =
-            state.copy(
-                power = true, mode = mode, temp = 24, fan = fan,
-                protocol = IrProtocol.COOLIX,
-                coolixFanAutoCode = autoCode, coolixRepeats = reps
-            )
-        return listOf(
-            FinderTest("MIDEA-24 · cool · fan-auto A", coolix(FanSpeed.AUTO, 0b101, 2)),
-            FinderTest("MIDEA-24 · cool · fan-auto B", coolix(FanSpeed.AUTO, 0b000, 2)),
-            FinderTest("MIDEA-24 · cool · fan MED", coolix(FanSpeed.MED, 0b101, 2)),
-            FinderTest("MIDEA-24 · cool · fan HIGH", coolix(FanSpeed.HIGH, 0b101, 2)),
-            FinderTest("MIDEA-24 · cool · fan LOW", coolix(FanSpeed.LOW, 0b101, 2)),
-            FinderTest("MIDEA-24 · AUTO mode", coolix(FanSpeed.AUTO, 0b101, 2, AcMode.AUTO)),
-            FinderTest("MIDEA-24 · 4x repeat", coolix(FanSpeed.AUTO, 0b101, 4)),
-            FinderTest("GREE", state.copy(
-                power = true, mode = AcMode.COOL, temp = 24,
-                fan = FanSpeed.AUTO, protocol = IrProtocol.GREE)),
-            FinderTest("MIDEA-48", state.copy(
-                power = true, mode = AcMode.COOL, temp = 24,
-                fan = FanSpeed.AUTO, protocol = IrProtocol.MIDEA))
-        )
-    }
-
-    private fun runFinder(step: Int) {
-        val tests = finderTests()
-        val test = tests[step % tests.size]
-        ir.send(test.state)
-        val round = step / tests.size + 1
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.finder_title, step + 1))
-            .setMessage(getString(R.string.finder_message, test.label) +
-                    if (round > 1) "\n\n" + getString(R.string.finder_retry_hint) else "")
-            .setPositiveButton(R.string.finder_yes) { _, _ ->
-                state = test.state.copy(roomTemp = state.roomTemp)
-                state.save(this)
-                refreshUi()
-                display.flashSync()
-                Toast.makeText(
-                    this, getString(R.string.finder_locked, test.label), Toast.LENGTH_LONG
-                ).show()
-            }
-            .setNegativeButton(R.string.finder_no) { _, _ -> runFinder(step + 1) }
-            .setNeutralButton(R.string.finder_stop, null)
-            .setCancelable(true)
-            .show()
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    // --------------------------------------------------------------- actions
-
-    /** Any change = transmit full state + persist + animate. */
-    private fun commit() {
-        val (_, exact) = state.resolveHorizontal()
-        transmit()
+    /** Transmit a captured Walton frame, then persist + refresh the display. */
+    private fun fire(pattern: IntArray) {
+        val ok = ir.send(pattern)
         state.save(this)
         refreshUi()
-        if (!exact) {
-            Toast.makeText(this, getString(R.string.approx_warning), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /**
-     * Swing change: transmit state, and on Midea-family protocols (where the
-     * louvers are driven by a separate toggle command, not the state frame)
-     * follow up with the swing-toggle frame after a short pause.
-     */
-    private fun commitSwing() {
-        commit()
-        AcEncoder.encodeSwingToggle(state)?.let { frame ->
-            handler.postDelayed({ ir.sendFrame(frame) }, 350)
-        }
-    }
-
-    /** SYNC: rebroadcast the entire remembered state so AC == display. */
-    private fun sync() {
-        transmit()
-        display.flashSync()
-        Toast.makeText(this, getString(R.string.synced_toast), Toast.LENGTH_SHORT).show()
-    }
-
-    private fun transmit() {
-        val ok = ir.send(state)
         if (!ok && !warnedNoIr) {
             Toast.makeText(this, getString(R.string.no_ir_warning), Toast.LENGTH_LONG).show()
             warnedNoIr = true
         }
     }
 
-    // ------------------------------------------------------------------ state
+    /** Re-send the current power + mode + temperature so the AC matches the app. */
+    private fun sync() {
+        ir.send(if (state.power) WaltonCodes.POWER_ON else WaltonCodes.POWER_OFF)
+        ir.send(state.mode.frame())
+        ir.send(state.tempFrame())
+        display.flashSync()
+        Toast.makeText(this, getString(R.string.synced_toast), Toast.LENGTH_SHORT).show()
+    }
 
     private fun refreshUi() {
-        // On Midea-family protocols the hardware only supports toggle/step
-        // swing, so any targeted vane position is an approximation.
-        val exact = if (state.protocol == IrProtocol.GREE) {
-            state.resolveHorizontal().second
-        } else {
-            state.vSwing == VerticalSwing.FULL_SWING &&
-                    state.leftZone == ZoneAim.SWING && state.rightZone == ZoneAim.SWING
-        }
-        display.update(state, exact)
+        display.update(state)
 
         txtTemp.text = getString(R.string.temp_format, state.temp)
         txtRoom.text = getString(R.string.temp_format, state.roomTemp)
@@ -294,13 +124,11 @@ class MainActivity : Activity() {
         btnPower.isSelected = state.power
         btnMode.text = getString(R.string.mode_format, state.mode.label)
         btnFan.text = getString(R.string.fan_format, state.fan.label)
+        btnVSwing.isSelected = state.vSwing
+        btnHSwing.isSelected = state.hSwing
+        btnDisplay.isSelected = state.display
         btnTurbo.isSelected = state.turbo
-        btnLight.isSelected = state.light
-        btnSleep.isSelected = state.sleep
-
-        for ((option, b) in vSwingButtons) b.isSelected = state.vSwing == option
-        for ((aim, b) in leftZoneButtons) b.isSelected = state.leftZone == aim
-        for ((aim, b) in rightZoneButtons) b.isSelected = state.rightZone == aim
-        for ((proto, b) in protocolButtons) b.isSelected = state.protocol == proto
+        btnEco.isSelected = state.eco
+        btnHealth.isSelected = state.health
     }
 }

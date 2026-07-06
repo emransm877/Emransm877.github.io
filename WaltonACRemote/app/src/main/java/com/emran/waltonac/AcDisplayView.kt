@@ -17,33 +17,26 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * The "smart display" of the remote:
- *  - 7-segment set-temperature + room temperature readout
- *  - a live front view of the AC where the left and right vane groups and the
- *    up/down flap animate in real time to exactly what was commanded
- *    (including independent left/right directions and sweep styles)
- *  - airflow / cooling particle animation coloured by mode
- *  - a sync pulse so you can visually confirm the state was broadcast
+ * Animated "smart display": a live front view of the AC where the up/down flap
+ * and left/right vanes sweep in real time when swing is on, a mode-coloured
+ * cooling/airflow particle field, a 7-segment set-temperature readout, the room
+ * temperature, and a sync pulse confirming a broadcast.
  */
 class AcDisplayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
     private var state: AcState = AcState()
-    private var hardwareExact = true
 
-    // Animated (current) angles, eased toward targets each frame
-    private var flapAngle = 45f            // degrees below horizontal
-    private var leftVaneAngle = 0f         // degrees, negative = left
-    private var rightVaneAngle = 0f
+    private var flapAngle = 45f
+    private var vaneAngle = 0f
     private var lastFrameNanos = 0L
     private var timeSec = 0f
-    private var syncFlash = 0f             // 1 -> 0 after SYNC pressed
+    private var syncFlash = 0f
 
-    // Airflow particles
     private class Particle {
         var x = 0f; var y = 0f; var vx = 0f; var vy = 0f
-        var life = 0f; var maxLife = 1f; var size = 4f; var fromLeft = true
+        var life = 0f; var maxLife = 1f; var size = 4f
     }
 
     private val particles = ArrayList<Particle>(120)
@@ -63,9 +56,8 @@ class AcDisplayView @JvmOverloads constructor(
     }
     private val path = Path()
 
-    fun update(newState: AcState, exact: Boolean) {
+    fun update(newState: AcState) {
         state = newState.copy()
-        hardwareExact = exact
         postInvalidateOnAnimation()
     }
 
@@ -74,32 +66,11 @@ class AcDisplayView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
-    // ------------------------------------------------------------------ math
+    private fun vFlapTarget(t: Float): Float =
+        if (state.vSwing) 45f + 30f * sin(t * 1.4f) else 45f
 
-    private fun vFlapTarget(t: Float): Float = when (state.vSwing) {
-        VerticalSwing.TOP -> 15f
-        VerticalSwing.UPPER_MID -> 30f
-        VerticalSwing.MIDDLE -> 45f
-        VerticalSwing.LOWER_MID -> 60f
-        VerticalSwing.BOTTOM -> 75f
-        VerticalSwing.FULL_SWING -> sweep(t, 15f, 75f)
-        VerticalSwing.SWEEP_UPPER -> sweep(t, 15f, 40f)
-        VerticalSwing.SWEEP_MIDDLE -> sweep(t, 35f, 60f)
-        VerticalSwing.SWEEP_LOWER -> sweep(t, 50f, 75f)
-    }
-
-    private fun zoneTarget(zone: ZoneAim, t: Float, phase: Float): Float = when (zone) {
-        ZoneAim.LEFT -> -32f
-        ZoneAim.CENTER -> 0f
-        ZoneAim.RIGHT -> 32f
-        ZoneAim.SWING -> sweep(t + phase, -32f, 32f)
-    }
-
-    private fun sweep(t: Float, lo: Float, hi: Float): Float {
-        val mid = (lo + hi) / 2f
-        val amp = (hi - lo) / 2f
-        return mid + amp * sin(t * 1.4f).toFloat()
-    }
+    private fun vaneTarget(t: Float): Float =
+        if (state.hSwing) 30f * sin(t * 1.2f) else 0f
 
     private fun modeColor(): Int = when {
         !state.power -> Color.rgb(70, 80, 95)
@@ -107,10 +78,8 @@ class AcDisplayView @JvmOverloads constructor(
         state.mode == AcMode.HEAT -> Color.rgb(255, 150, 70)
         state.mode == AcMode.DRY -> Color.rgb(120, 230, 190)
         state.mode == AcMode.FAN -> Color.rgb(200, 210, 230)
-        else -> Color.rgb(170, 160, 255) // AUTO
+        else -> Color.rgb(170, 160, 255)
     }
-
-    // ---------------------------------------------------------------- drawing
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -121,18 +90,15 @@ class AcDisplayView @JvmOverloads constructor(
         lastFrameNanos = now
         timeSec += dt
 
-        // Ease current angles toward targets
         val ease = (dt * 5f).coerceAtMost(1f)
         flapAngle += (vFlapTarget(timeSec) - flapAngle) * ease
-        leftVaneAngle += (zoneTarget(state.leftZone, timeSec, 0f) - leftVaneAngle) * ease
-        rightVaneAngle += (zoneTarget(state.rightZone, timeSec, 0.9f) - rightVaneAngle) * ease
+        vaneAngle += (vaneTarget(timeSec) - vaneAngle) * ease
         if (syncFlash > 0f) syncFlash = (syncFlash - dt * 0.8f).coerceAtLeast(0f)
 
         val w = width.toFloat()
         val h = height.toFloat()
         val accent = modeColor()
 
-        // Panel background
         paint.style = Paint.Style.FILL
         paint.shader = LinearGradient(
             0f, 0f, 0f, h,
@@ -141,7 +107,6 @@ class AcDisplayView @JvmOverloads constructor(
         canvas.drawRoundRect(RectF(0f, 0f, w, h), 28f, 28f, paint)
         paint.shader = null
 
-        // Subtle ambient glow behind the AC when running
         if (state.power) {
             paint.shader = RadialGradient(
                 w / 2f, h * 0.30f, w * 0.55f,
@@ -156,19 +121,15 @@ class AcDisplayView @JvmOverloads constructor(
         drawReadouts(canvas, w, h, accent)
         drawSyncPulse(canvas, w, h, accent)
 
-        if (state.power || syncFlash > 0f ||
-            state.vSwing.isSweep || state.leftZone == ZoneAim.SWING ||
-            state.rightZone == ZoneAim.SWING ||
+        if (state.power || syncFlash > 0f || state.vSwing || state.hSwing ||
             kotlin.math.abs(flapAngle - vFlapTarget(timeSec)) > 0.5f
         ) {
             postInvalidateOnAnimation()
         } else {
-            // Keep a gentle idle refresh so eased angles settle visually
             postInvalidateDelayed(120)
         }
     }
 
-    /** Front view of the indoor unit with animated flap + vane groups. */
     private fun drawAcUnit(canvas: Canvas, w: Float, h: Float, accent: Int) {
         val unitLeft = w * 0.08f
         val unitRight = w * 0.92f
@@ -184,54 +145,31 @@ class AcDisplayView @JvmOverloads constructor(
         canvas.drawRoundRect(body, 26f, 26f, paint)
         paint.shader = null
 
-        // Brand strip
         textPaint.color = Color.rgb(90, 100, 118)
         textPaint.textSize = h * 0.028f
         textPaint.textAlign = Paint.Align.LEFT
         canvas.drawText("WALTON  INVERTER", unitLeft + 24f, unitTop + h * 0.045f, textPaint)
 
-        // Power LED
         paint.color = if (state.power) accent else Color.rgb(120, 128, 140)
         canvas.drawCircle(unitRight - 30f, unitTop + h * 0.035f, 7f, paint)
 
-        // Vent opening
         val ventTop = unitBottom - h * 0.075f
         val vent = RectF(unitLeft + 18f, ventTop, unitRight - 18f, unitBottom - 8f)
         paint.color = Color.rgb(24, 30, 42)
         canvas.drawRoundRect(vent, 12f, 12f, paint)
 
-        val ventMidX = (vent.left + vent.right) / 2f
-
-        // --- Vertical vane groups (left half / right half), drawn as slanted
-        // louvers whose slant follows the commanded horizontal angle.
+        // Vertical vanes leaning with the horizontal-swing angle
         strokePaint.strokeWidth = 5f
         val vaneH = vent.height() - 10f
-        val groups = listOf(
-            Triple(vent.left + 10f, ventMidX - 8f, leftVaneAngle),
-            Triple(ventMidX + 8f, vent.right - 10f, rightVaneAngle)
-        )
-        for ((gLeft, gRight, angle) in groups) {
-            val n = 6
-            val lean = sin(Math.toRadians(angle.toDouble())).toFloat() * vaneH * 0.55f
-            strokePaint.color = if (state.power) withAlpha(accent, 235)
-            else Color.rgb(90, 100, 118)
-            for (i in 0 until n) {
-                val x = gLeft + (gRight - gLeft) * i / (n - 1f)
-                canvas.drawLine(
-                    x, vent.top + 5f,
-                    x + lean, vent.top + 5f + vaneH,
-                    strokePaint
-                )
-            }
+        val lean = sin(Math.toRadians(vaneAngle.toDouble())).toFloat() * vaneH * 0.55f
+        strokePaint.color = if (state.power) withAlpha(accent, 235) else Color.rgb(90, 100, 118)
+        val n = 12
+        for (i in 0 until n) {
+            val x = vent.left + 10f + (vent.width() - 20f) * i / (n - 1f)
+            canvas.drawLine(x, vent.top + 5f, x + lean, vent.top + 5f + vaneH, strokePaint)
         }
 
-        // Center divider between the two independent groups
-        strokePaint.color = Color.rgb(60, 70, 88)
-        strokePaint.strokeWidth = 3f
-        canvas.drawLine(ventMidX, vent.top + 4f, ventMidX, vent.bottom - 4f, strokePaint)
-
-        // --- Up/down flap: a bar hanging from the vent whose drop follows the
-        // vertical angle (15° = nearly closed/far throw, 75° = straight down).
+        // Up/down flap
         val flapLen = h * 0.075f
         val rad = Math.toRadians(flapAngle.toDouble())
         val drop = (sin(rad) * flapLen).toFloat()
@@ -244,58 +182,31 @@ class AcDisplayView @JvmOverloads constructor(
         path.lineTo(vent.left + 6f + forward, vent.bottom + drop)
         path.close()
         canvas.drawPath(path, paint)
-        strokePaint.color = withAlpha(accent, if (state.power) 200 else 60)
-        strokePaint.strokeWidth = 3f
-        canvas.drawLine(
-            vent.left + 6f + forward, vent.bottom + drop,
-            vent.right - 6f - forward, vent.bottom + drop, strokePaint
-        )
 
-        // Labels under each half so you always know which side is which
         textPaint.textSize = h * 0.026f
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.color = Color.rgb(110, 125, 150)
-        val labelY = unitBottom + h * 0.115f
+        val labelY = unitBottom + h * 0.11f
         canvas.drawText(
-            "L: " + state.leftZone.label,
-            (vent.left + ventMidX) / 2f, labelY, textPaint
+            "↕ " + (if (state.vSwing) "SWING" else "FIXED") +
+                "     ↔ " + (if (state.hSwing) "SWING" else "FIXED"),
+            w / 2f, labelY, textPaint
         )
-        canvas.drawText(
-            "R: " + state.rightZone.label,
-            (ventMidX + vent.right) / 2f, labelY, textPaint
-        )
-        canvas.drawText("V: " + state.vSwing.label, ventMidX, labelY + h * 0.035f, textPaint)
-
-        if (!hardwareExact) {
-            textPaint.color = Color.rgb(255, 190, 90)
-            canvas.drawText("≈ closest supported pattern", ventMidX, labelY + h * 0.070f, textPaint)
-        }
     }
 
-    /** Airflow / cooling particle animation. */
     private fun drawAirflow(canvas: Canvas, w: Float, h: Float, accent: Int, dt: Float) {
         val ventY = h * 0.34f
-        val ventMidX = w / 2f
-        val fanBoost = when {
-            state.turbo -> 1.8f
-            else -> 1f + 0.35f * state.fan.protocolValue
-        }
+        val fanBoost = if (state.turbo) 1.8f else 1f + 0.3f * state.fan.ordinal
 
         if (state.power) {
-            // spawn
             val spawnCount = (2 * fanBoost).toInt().coerceAtLeast(1)
             repeat(spawnCount) {
                 if (particles.size < 110) {
                     val p = Particle()
-                    p.fromLeft = rng.nextBoolean()
-                    val gAngle = if (p.fromLeft) leftVaneAngle else rightVaneAngle
-                    val baseX = if (p.fromLeft)
-                        w * 0.12f + rng.nextFloat() * (ventMidX - w * 0.14f)
-                    else ventMidX + rng.nextFloat() * (w * 0.88f - ventMidX - w * 0.04f)
-                    p.x = baseX
+                    p.x = w * 0.12f + rng.nextFloat() * (w * 0.76f)
                     p.y = ventY + rng.nextFloat() * 8f
                     val vr = Math.toRadians(flapAngle.toDouble())
-                    val hr = Math.toRadians(gAngle.toDouble())
+                    val hr = Math.toRadians(vaneAngle.toDouble())
                     val speed = (h * 0.16f) * fanBoost * (0.8f + rng.nextFloat() * 0.4f)
                     p.vx = (sin(hr) * speed * 0.8f).toFloat()
                     p.vy = (sin(vr) * speed).toFloat().coerceAtLeast(h * 0.03f)
@@ -307,7 +218,6 @@ class AcDisplayView @JvmOverloads constructor(
             }
         }
 
-        // update + draw
         val it = particles.iterator()
         while (it.hasNext()) {
             val p = it.next()
@@ -338,7 +248,6 @@ class AcDisplayView @JvmOverloads constructor(
         }
     }
 
-    /** Digital readouts: big 7-segment set temp, room temp, mode, fan bars. */
     private fun drawReadouts(canvas: Canvas, w: Float, h: Float, accent: Int) {
         val panelTop = h * 0.64f
         val panel = RectF(w * 0.05f, panelTop, w * 0.95f, h * 0.96f)
@@ -355,10 +264,8 @@ class AcDisplayView @JvmOverloads constructor(
         val cy = panel.centerY() - panel.height() * 0.06f
 
         val setColor = if (state.power) accent else Color.rgb(60, 70, 88)
-        val tens = state.temp / 10
-        val ones = state.temp % 10
-        drawSevenSeg(canvas, cx - digitW - 10f, cy - digitH / 2f, digitW, digitH, tens, setColor)
-        drawSevenSeg(canvas, cx + 10f, cy - digitH / 2f, digitW, digitH, ones, setColor)
+        drawSevenSeg(canvas, cx - digitW - 10f, cy - digitH / 2f, digitW, digitH, state.temp / 10, setColor)
+        drawSevenSeg(canvas, cx + 10f, cy - digitH / 2f, digitW, digitH, state.temp % 10, setColor)
 
         textPaint.color = setColor
         textPaint.textAlign = Paint.Align.LEFT
@@ -368,7 +275,6 @@ class AcDisplayView @JvmOverloads constructor(
         textPaint.color = Color.rgb(110, 125, 150)
         canvas.drawText("SET", cx - digitW - 10f, panel.bottom - panel.height() * 0.10f, textPaint)
 
-        // Room temperature block
         val rx = panel.left + panel.width() * 0.62f
         textPaint.color = Color.rgb(110, 125, 150)
         textPaint.textSize = panel.height() * 0.11f
@@ -377,15 +283,14 @@ class AcDisplayView @JvmOverloads constructor(
         textPaint.textSize = panel.height() * 0.30f
         canvas.drawText("${state.roomTemp}°", rx, panel.top + panel.height() * 0.52f, textPaint)
 
-        // Mode + fan bars
         textPaint.color = accent
         textPaint.textSize = panel.height() * 0.13f
         val modeLabel = StringBuilder(state.mode.label)
         if (state.turbo) modeLabel.append("  TURBO")
-        if (state.sleep) modeLabel.append("  SLEEP")
+        if (state.eco) modeLabel.append("  ECO")
         canvas.drawText(modeLabel.toString(), rx, panel.top + panel.height() * 0.72f, textPaint)
 
-        val bars = if (state.turbo) 4 else state.fan.protocolValue
+        val bars = if (state.turbo) 4 else state.fan.ordinal
         val barY = panel.bottom - panel.height() * 0.14f
         for (i in 0 until 4) {
             paint.color = if (state.power && (bars == 0 || i < bars))
@@ -404,15 +309,9 @@ class AcDisplayView @JvmOverloads constructor(
         )
     }
 
-    /** Minimal 7-segment digit renderer. */
     private fun drawSevenSeg(
         canvas: Canvas, x: Float, y: Float, w: Float, h: Float, digit: Int, color: Int
     ) {
-        //      a
-        //    f   b
-        //      g
-        //    e   c
-        //      d
         val on = intArrayOf(
             0b1111110, 0b0110000, 0b1101101, 0b1111001, 0b0110011,
             0b1011011, 0b1011111, 0b1110000, 0b1111111, 0b1111011
@@ -421,20 +320,18 @@ class AcDisplayView @JvmOverloads constructor(
         val m = w * 0.12f
         val midY = y + h / 2f
         fun seg(bit: Int, x1: Float, y1: Float, x2: Float, y2: Float) {
-            segPaint.color = if ((on shr bit) and 1 == 1) color
-            else withAlpha(color, 26)
+            segPaint.color = if ((on shr bit) and 1 == 1) color else withAlpha(color, 26)
             canvas.drawLine(x1, y1, x2, y2, segPaint)
         }
-        seg(6, x + m, y, x + w - m, y)                       // a
-        seg(5, x + w, y + m, x + w, midY - m)                // b
-        seg(4, x + w, midY + m, x + w, y + h - m)            // c
-        seg(3, x + m, y + h, x + w - m, y + h)               // d
-        seg(2, x, midY + m, x, y + h - m)                    // e
-        seg(1, x, y + m, x, midY - m)                        // f
-        seg(0, x + m, midY, x + w - m, midY)                 // g
+        seg(6, x + m, y, x + w - m, y)
+        seg(5, x + w, y + m, x + w, midY - m)
+        seg(4, x + w, midY + m, x + w, y + h - m)
+        seg(3, x + m, y + h, x + w - m, y + h)
+        seg(2, x, midY + m, x, y + h - m)
+        seg(1, x, y + m, x, midY - m)
+        seg(0, x + m, midY, x + w - m, midY)
     }
 
-    /** Expanding ring + label when SYNC fires. */
     private fun drawSyncPulse(canvas: Canvas, w: Float, h: Float, accent: Int) {
         if (syncFlash <= 0f) return
         val progress = 1f - syncFlash
@@ -444,7 +341,7 @@ class AcDisplayView @JvmOverloads constructor(
         textPaint.color = withAlpha(Color.WHITE, (255 * syncFlash).toInt())
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = h * 0.045f
-        canvas.drawText("STATE SYNCED ⇄", w / 2f, h * 0.055f, textPaint)
+        canvas.drawText("SIGNAL SENT ⇄", w / 2f, h * 0.055f, textPaint)
     }
 
     private fun withAlpha(color: Int, alpha: Int): Int =

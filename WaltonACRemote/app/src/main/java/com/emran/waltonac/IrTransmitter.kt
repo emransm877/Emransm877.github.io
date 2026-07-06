@@ -7,8 +7,10 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 
 /**
- * Thin wrapper around the phone's IR blaster (Redmi/Xiaomi phones like the
- * Redmi K90 expose it through the standard ConsumerIrManager API).
+ * Sends real Walton IR frames through the phone's IR blaster (the Redmi K90
+ * exposes it via the standard ConsumerIrManager API). Frames are the exact
+ * mark/space patterns captured from the official Walton remote, transmitted on
+ * the same 76 kHz carrier the official app uses.
  */
 class IrTransmitter(context: Context) {
 
@@ -20,16 +22,14 @@ class IrTransmitter(context: Context) {
     val available: Boolean
         get() = ir?.hasIrEmitter() == true
 
-    /** Send the full AC state using the state's selected protocol. */
-    fun send(state: AcState): Boolean = sendFrame(AcEncoder.encode(state))
-
-    /** Send a raw pre-built frame (e.g. a swing-toggle command). */
-    fun sendFrame(frame: IrFrame): Boolean {
+    /** Fire a raw Walton frame. Returns true if the blaster actually fired. */
+    fun send(pattern: IntArray): Boolean {
         buzz()
         val emitter = ir ?: return false
         if (!emitter.hasIrEmitter()) return false
+        if (pattern.isEmpty()) return false
         return try {
-            emitter.transmit(frame.carrierHz, frame.pattern)
+            emitter.transmit(WaltonCodes.CARRIER_HZ, pattern)
             true
         } catch (e: Exception) {
             false
