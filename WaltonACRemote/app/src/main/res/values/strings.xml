@@ -25,7 +25,7 @@
     <string name="synced_toast">Re-sent power, mode and temperature to the AC</string>
     <string name="no_ir_warning">No IR blaster detected — running in demo mode (animations only). Check that your phone\'s IR works in Mi Remote.</string>
     <string name="diag_title">DIAGNOSTICS — tap CARRIER to try different frequencies if the AC stays silent</string>
-    <string name="carrier_placeholder">CARRIER: 76 kHz (tap to change)</string>
+    <string name="carrier_placeholder">CARRIER: 38 kHz (tap to change)</string>
     <string name="carrier_format">CARRIER: %d kHz (tap to change)</string>
     <string name="diag_placeholder">press a button to test…</string>
     <string name="diag_format">blaster present: %1$s\nphone supports: %2$s Hz\nlast signal: %3$s</string>

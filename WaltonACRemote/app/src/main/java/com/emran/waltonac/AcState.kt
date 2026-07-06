@@ -46,7 +46,9 @@ data class AcState(
     var eco: Boolean = false,
     var health: Boolean = false,
     var roomTemp: Int = 28,           // display-only (IR is one-way)
-    var carrierHz: Int = 76000        // official app default; toggle if unsupported
+    // 38 kHz is what actually fires on this phone's blaster (76 kHz, the value
+    // in the official app, is out of the emitter's range and stays silent).
+    var carrierHz: Int = 38000
 ) {
     companion object {
         const val MIN_TEMP = 16
@@ -67,7 +69,7 @@ data class AcState(
                 eco = p.getBoolean("eco", false),
                 health = p.getBoolean("health", false),
                 roomTemp = p.getInt("roomTemp", 28),
-                carrierHz = p.getInt("carrierHz", 76000)
+                carrierHz = p.getInt("carrierHz", 38000)
             )
         }
     }

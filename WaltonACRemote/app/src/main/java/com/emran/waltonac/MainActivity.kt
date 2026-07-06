@@ -28,7 +28,7 @@ class MainActivity : Activity() {
 
     // Carriers to offer: 76 kHz is what the official app sends; 38 kHz is the
     // standard many blasters actually support if 76 kHz is out of range.
-    private val carriers = intArrayOf(76000, 38000, 56000, 33000)
+    private val carriers = intArrayOf(38000, 76000, 56000, 33000, 40000)
 
     private var warnedNoIr = false
 
