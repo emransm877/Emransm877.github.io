@@ -78,8 +78,16 @@ class MainActivity : Activity() {
             if (state.temp < AcState.MAX_TEMP) { state.temp++; fire(state.tempFrame()) }
         }
 
-        btnMode.setOnClickListener { state.mode = state.mode.next(); fire(state.mode.frame()) }
-        btnFan.setOnClickListener { state.fan = state.fan.next(); fire(WaltonCodes.FAN_STEP) }
+        // MODE and FAN frames are full-state snapshots that carry 25 °C, so
+        // after switching, re-apply the real temperature so the AC doesn't jump.
+        btnMode.setOnClickListener {
+            state.mode = state.mode.next()
+            fireThenReapplyTemp(state.mode.frame())
+        }
+        btnFan.setOnClickListener {
+            state.fan = state.fan.next()
+            fireThenReapplyTemp(WaltonCodes.FAN_STEP)
+        }
 
         btnVSwing.setOnClickListener {
             state.vSwing = !state.vSwing
@@ -117,6 +125,20 @@ class MainActivity : Activity() {
         ir.send(pattern, state.carrierHz)
         state.save(this)
         refreshUi()
+    }
+
+    /**
+     * Send a full-snapshot frame (mode/fan) then re-apply the real temperature
+     * ~450 ms later, so the AC keeps the user's temperature instead of the
+     * 25 °C baked into the snapshot. Only re-applies while powered on.
+     */
+    private fun fireThenReapplyTemp(pattern: IntArray) {
+        ir.send(pattern, state.carrierHz)
+        state.save(this)
+        refreshUi()
+        if (state.power) {
+            handler.postDelayed({ ir.send(state.tempFrame(), state.carrierHz); refreshUi() }, 450L)
+        }
     }
 
     /**
