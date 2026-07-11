@@ -168,6 +168,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 .sbtn{background:linear-gradient(135deg,#00f0ff,#0088ff);border:none;border-radius:9px;color:#000;cursor:pointer;font-weight:900;font-size:.9rem;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;transition:transform .15s}
 .sbtn:active{transform:scale(.92)}
 .sbtn:disabled{opacity:.3;cursor:not-allowed}
+.sbtn.stop{background:linear-gradient(135deg,#ff4444,#cc0066);color:#fff;font-size:.75rem}
 
 /* MARKDOWN IN MESSAGES */
 .mb h3,.mb h4,.mb h5,.mb h6{margin:10px 0 4px;color:#00f0ff;line-height:1.3;font-size:.84rem}
@@ -285,7 +286,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
     <div class="irow">
       <button class="abtn" onclick="pickFiles()" title="Attach files">📎</button>
       <textarea class="ainput" id="ainput" placeholder="Talk to the agent..." rows="1"></textarea>
-      <button class="sbtn" id="sendBtn" onclick="sendMsg()">↑</button>
+      <button class="sbtn" id="sendBtn" onclick="sendOrStop()">↑</button>
     </div>
     <input type="file" id="fileInput" multiple style="display:none" accept="image/*,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml,.toml,.ini,.log,.sql,.sh">
   </div>
@@ -297,7 +298,19 @@ const AGENTS = [{"name": "Anthropologist", "emoji": "\ud83c\udf0d", "div": "Acad
 const DIV_ICONS={Engineering:'💻',Design:'🎨',Marketing:'📢',Sales:'💰',Product:'📦','Project Management':'🎬',Testing:'🧪',Security:'🔒',Support:'🛟','Paid Media':'📣',Specialized:'⚡',Finance:'💼','Game Dev':'🎮',GIS:'🗺️',Academic:'🎓','Spatial Computing':'🥽'};
 const DEFAULT_QPS=[['SaaS team',"Who do I need to build a SaaS?"],['Cold email',"Best agent for cold outreach?"],['Security',"Security audit help"],['Finance',"Financial modeling help"],['Game design',"Design a game economy"],['Launch team',"Build a product launch team"]];
 
-let activeDiv='All',searchQ='',activeAgent=null,busy=false,history=[],pendingFiles=[];
+let activeDiv='All',searchQ='',activeAgent=null,busy=false,history=[],pendingFiles=[],aborter=null,typing=null;
+
+// STOP BUTTON — send button becomes ■ while the agent is replying
+function sendOrStop(){busy?stopGen():sendMsg()}
+function stopGen(){
+  if(aborter)aborter.abort();
+  if(typing)typing.skip=true;
+}
+function setSendMode(stop){
+  const b=document.getElementById('sendBtn');
+  b.textContent=stop?'■':'↑';
+  b.classList.toggle('stop',stop);
+}
 
 const PROXY='https://agency-proxy-production.up.railway.app/api/chat';
 const MODEL='claude-sonnet-4-6';
@@ -664,7 +677,8 @@ async function sendMsg(){
 async function callAPI(userMsg,isIntro=false,files=[]){
   if(busy&&!isIntro)return;
   busy=true;
-  document.getElementById('sendBtn').disabled=true;
+  aborter=new AbortController();
+  setSendMode(true);
 
   const who=activeAgent?activeAgent.name:'Agency Intelligence';
   const system=buildSystem();
@@ -708,7 +722,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
 
   try{
     const payload={model:MODEL,max_tokens:4096,system,messages};
-    let res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,stream:true})});
+    let res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,stream:true}),signal:aborter.signal});
     const ct=res.headers.get('content-type')||'';
 
     if(res.ok&&ct.includes('text/event-stream')){
@@ -732,7 +746,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     }else{
       // Proxy doesn't stream — fetch the full reply, then typewriter it
       if(!res.ok||!ct.includes('application/json')){
-        res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
       }
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||'API error');
@@ -747,30 +761,34 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     saveMem();
   }catch(err){
     thinkEl.remove();
+    const stopped=err&&(err.name==='AbortError'||/abort/i.test(err.message||''));
     if(full){
-      // keep whatever partially streamed
+      // keep whatever partially streamed in the bubble and in memory
       paint(full,true);
       history.push({role:'assistant',content:full,ui:{who}});
       saveMem();
     }else{
       if(el)el.remove();
       if(history.length&&history[history.length-1].role==='user')history.pop();
-      addMsg('⚠ '+((err&&err.message)||'Connection error — try again.'),'sys');
+      addMsg(stopped?'■ Stopped.':'⚠ '+((err&&err.message)||'Connection error — try again.'),'sys');
     }
   }
 
   busy=false;
-  document.getElementById('sendBtn').disabled=false;
+  aborter=null;
+  setSendMode(false);
 }
 
 function typeOut(full,paint){
   return new Promise(resolve=>{
+    typing={skip:false};
     let i=0;
     const chunk=Math.max(2,Math.round(full.length/160));
     (function step(){
+      if(typing&&typing.skip)i=full.length;
       i=Math.min(full.length,i+chunk);
       paint(full.slice(0,i));
-      if(i<full.length)setTimeout(step,14);else resolve();
+      if(i<full.length)setTimeout(step,14);else{typing=null;resolve()}
     })();
   });
 }
