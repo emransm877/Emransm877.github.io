@@ -169,6 +169,32 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 .sbtn:active{transform:scale(.92)}
 .sbtn:disabled{opacity:.3;cursor:not-allowed}
 
+/* MARKDOWN IN MESSAGES */
+.mb h3,.mb h4,.mb h5,.mb h6{margin:10px 0 4px;color:#00f0ff;line-height:1.3;font-size:.84rem}
+.mb h3{font-size:.94rem}.mb h4{font-size:.88rem}
+.mb ul.mdl,.mb ol.mdl{margin:6px 0;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.mb pre.cb{background:#050a14;border:1px solid rgba(0,240,255,.15);border-radius:8px;padding:10px;overflow-x:auto;margin:8px 0;font-family:'Space Mono',monospace;font-size:.7rem;line-height:1.55;max-width:100%}
+.mb code.ic{background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.12);border-radius:4px;padding:1px 5px;font-family:'Space Mono',monospace;font-size:.72rem;color:#7ee7ff}
+.mb blockquote.mdq{border-left:2px solid rgba(0,240,255,.4);padding:2px 0 2px 10px;color:rgba(180,210,255,.65);margin:6px 0}
+.mb hr.mdhr{border:none;border-top:1px solid rgba(0,240,255,.15);margin:10px 0}
+.mb a{color:#00f0ff;text-decoration:underline}
+.mb.streaming::after{content:'▊';color:#00f0ff;animation:blink .9s infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* MESSAGE ACTIONS */
+.macts{display:flex;gap:10px;margin-top:4px;padding-left:4px}
+.macts button{background:none;border:none;color:#2a3f5a;cursor:pointer;font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.05em;padding:2px 0;-webkit-tap-highlight-color:transparent}
+.macts button:active{color:#00f0ff}
+
+/* FILE ATTACHMENTS */
+.abtn{background:#0a1222;border:1px solid rgba(0,240,255,.15);border-radius:9px;color:#00f0ff;cursor:pointer;font-size:1rem;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.abtn:active{border-color:#00f0ff}
+.pfiles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.pfile{display:flex;align-items:center;gap:6px;background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:4px 8px;font-size:.66rem;color:#aae8ff}
+.pfile span{cursor:pointer;color:#ff6060;font-weight:700;padding:0 2px}
+.mb .uimg{max-width:180px;max-height:180px;border-radius:8px;display:block;margin-bottom:6px}
+.uchip{display:inline-flex;align-items:center;gap:4px;background:rgba(0,240,255,.12);border:1px solid rgba(0,240,255,.25);border-radius:6px;padding:3px 8px;font-size:.66rem;margin:0 4px 6px 0}
+
 /* DIV COLORS */
 .dv-Engineering{background:rgba(0,200,255,.12);color:#00c8ff}
 .dv-Design{background:rgba(200,80,255,.12);color:#cc50ff}
@@ -239,6 +265,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
       <div class="chat-name" id="chatName">Agency Intelligence</div>
       <div class="chat-sub" id="chatSub">231 agents · tap a card to activate</div>
     </div>
+    <button class="chat-rbtn" onclick="clearChat()">🗑 CLEAR</button>
     <button class="chat-rbtn" onclick="resetAgent()">↺ RESET</button>
   </div>
   <div class="msgs" id="msgs">
@@ -248,6 +275,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
     </div>
   </div>
   <div class="chat-foot">
+    <div class="pfiles" id="pfiles" style="display:none"></div>
     <div class="qps" id="qps">
       <div class="qp" onclick="sq('Who do I need to build a SaaS?')">SaaS team</div>
       <div class="qp" onclick="sq('Best agent for cold outreach?')">Cold email</div>
@@ -255,9 +283,11 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
       <div class="qp" onclick="sq('Financial modeling help')">Finance</div>
     </div>
     <div class="irow">
+      <button class="abtn" onclick="pickFiles()" title="Attach files">📎</button>
       <textarea class="ainput" id="ainput" placeholder="Talk to the agent..." rows="1"></textarea>
       <button class="sbtn" id="sendBtn" onclick="sendMsg()">↑</button>
     </div>
+    <input type="file" id="fileInput" multiple style="display:none" accept="image/*,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml,.toml,.ini,.log,.sql,.sh">
   </div>
 </div>
 
@@ -267,7 +297,124 @@ const AGENTS = [{"name": "Anthropologist", "emoji": "\ud83c\udf0d", "div": "Acad
 const DIV_ICONS={Engineering:'💻',Design:'🎨',Marketing:'📢',Sales:'💰',Product:'📦','Project Management':'🎬',Testing:'🧪',Security:'🔒',Support:'🛟','Paid Media':'📣',Specialized:'⚡',Finance:'💼','Game Dev':'🎮',GIS:'🗺️',Academic:'🎓','Spatial Computing':'🥽'};
 const DEFAULT_QPS=[['SaaS team',"Who do I need to build a SaaS?"],['Cold email',"Best agent for cold outreach?"],['Security',"Security audit help"],['Finance',"Financial modeling help"],['Game design',"Design a game economy"],['Launch team',"Build a product launch team"]];
 
-let activeDiv='All',searchQ='',activeAgent=null,busy=false,history=[];
+let activeDiv='All',searchQ='',activeAgent=null,busy=false,history=[],pendingFiles=[];
+
+const PROXY='https://agency-proxy-production.up.railway.app/api/chat';
+const MODEL='claude-sonnet-4-6';
+
+const CONVO_RULES=`
+
+HOW YOU TALK — these rules override everything above:
+- You're texting live with a person, not writing a report. Sound like a sharp, warm human colleague.
+- MATCH THEIR LENGTH AND ENERGY. Casual or short message = 1-3 sentence reply. Only go long when they explicitly ask for a full deliverable.
+- Never open with a lecture or a wall of text. React to what they actually said, in plain language.
+- Be curious: ask one good question back when it genuinely moves things forward. Remember details they share (their name, project, goals) and reference them naturally later.
+- Have opinions. Push back when they're wrong. A little humor is welcome. Zero corporate filler, zero AI disclaimers — never break character.
+- When they DO ask you to generate something (a doc, plan, code, email, strategy), deliver it complete and real — no placeholders, no "I would..." — in clean markdown with headers, lists and code blocks.
+- For a big vague task: confirm scope in one line and ask the 1-2 questions you truly need, or just make a smart call and go.
+- If they attach a file or image, actually read it and respond to its specific contents.`;
+
+function buildSystem(){
+  if(activeAgent){
+    const a=activeAgent;
+    return `You ARE ${a.name} — a specialist working live with the user.
+NAME: ${a.name} | DIVISION: ${a.div}
+DESCRIPTION: ${a.desc}
+VIBE: "${a.vibe}"
+YOUR METHODOLOGY:
+${a.system}
+
+Stay completely in character as ${a.name} at all times.`+CONVO_RULES;
+  }
+  return `You are Agency Intelligence — command brain of Agency HQ with knowledge of all 231 specialist agents across 16 divisions. Help users find the right agent, build teams, and get expert guidance. Be specific, direct, and action-oriented.`+CONVO_RULES;
+}
+
+function introPrompt(a){return `(The user just opened a chat with you. Greet them as ${a.name} in 1-2 short, personable sentences — who you are in plain words, plus one casual question about what they're working on. No lists, no headers, no formality.)`}
+
+// MEMORY — every chat is saved per-agent and survives refresh
+function memKey(){return 'agencyMem2_'+(activeAgent?activeAgent.name:'HQ')}
+function loadMem(){
+  try{const h=JSON.parse(localStorage.getItem(memKey()));return Array.isArray(h)?h:[]}catch(e){return[]}
+}
+function clearMem(){try{localStorage.removeItem(memKey())}catch(e){}}
+function saveMem(){
+  try{
+    const slim=history.slice(-60).map(m=>{
+      if(!Array.isArray(m.content))return m;
+      // strip heavy base64 file data before persisting — keeps localStorage small
+      return {
+        role:m.role,hidden:m.hidden,
+        content:m.content.map(b=>(b.type==='image'||b.type==='document')?{type:'text',text:'[the user attached a file here earlier in the conversation]'}:b),
+        ui:m.ui?{text:m.ui.text,files:(m.ui.files||[]).map(f=>({name:f.name}))}:null
+      };
+    });
+    localStorage.setItem(memKey(),JSON.stringify(slim));
+  }catch(e){}
+}
+function trimHistory(){
+  if(history.length>60)history=history.slice(-60);
+  while(history.length&&history[0].role!=='user')history.shift();
+}
+
+// MARKDOWN — lightweight renderer (escapes HTML first, so it's safe)
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function md(src){
+  if(!src)return'';
+  const codes=[],inl=[];
+  src=String(src).replace(/```(\w*)[^\n]*\n?([\s\S]*?)```/g,(m,lang,code)=>{
+    codes.push('<pre class="cb"><code>'+esc(code.replace(/\n+$/,''))+'</code></pre>');
+    return '\u0000B'+(codes.length-1)+'\u0000';
+  });
+  src=src.replace(/`([^`\n]+)`/g,(m,c)=>{inl.push('<code class="ic">'+esc(c)+'</code>');return '\u0000I'+(inl.length-1)+'\u0000'});
+  let out=esc(src);
+  out=out.replace(/^(#{1,6})\s+(.+)$/gm,(m,h,t)=>{const l=Math.min(h.length+2,6);return '<h'+l+' class="mdh">'+t+'</h'+l+'>'});
+  out=out.replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm,'<hr class="mdhr">');
+  out=out.replace(/^&gt;\s?(.*)$/gm,'<blockquote class="mdq">$1</blockquote>');
+  out=out.replace(/^[ \t]*\d+[.)]\s+(.+)$/gm,'<li data-o>$1</li>');
+  out=out.replace(/^[ \t]*[-*+]\s+(.+)$/gm,'<li>$1</li>');
+  out=out.replace(/(?:<li(?: data-o)?>.*<\/li>\n?)+/g,m=>{
+    const tag=m.indexOf('data-o')>-1?'ol':'ul';
+    return '<'+tag+' class="mdl">'+m.replace(/ data-o/g,'').replace(/\n/g,'')+'</'+tag+'>\n';
+  });
+  out=out.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  out=out.replace(/(^|[\s(])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+  out=out.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  out=out.replace(/\n/g,'<br>');
+  out=out.replace(/(<\/(?:h\d|ul|ol|blockquote)>|<hr class="mdhr">)<br>/g,'$1');
+  out=out.replace(/<br>(<(?:h\d|ul|ol|blockquote|hr))/g,'$1');
+  out=out.replace(/(?:<br>)?\u0000B(\d+)\u0000(?:<br>)?/g,(m,i)=>codes[+i]);
+  out=out.replace(/\u0000I(\d+)\u0000/g,(m,i)=>inl[+i]);
+  return out;
+}
+
+// FILE UPLOAD
+const TEXT_EXT=/\.(txt|md|markdown|csv|tsv|json|js|jsx|ts|tsx|py|rb|go|rs|java|c|cpp|h|html|css|xml|yml|yaml|toml|ini|log|sql|sh)$/i;
+function pickFiles(){document.getElementById('fileInput').click()}
+async function onFiles(e){
+  for(const file of Array.from(e.target.files)){
+    if(file.size>4*1024*1024){addMsg('⚠ '+file.name+' is over 4MB — too big to send.','sys');continue}
+    try{
+      if(file.type.startsWith('image/')){
+        pendingFiles.push({kind:'image',name:file.name,mime:file.type,data:await b64(file)});
+      }else if(file.type==='application/pdf'||/\.pdf$/i.test(file.name)){
+        pendingFiles.push({kind:'pdf',name:file.name,data:await b64(file)});
+      }else if(TEXT_EXT.test(file.name)||file.type.startsWith('text/')){
+        pendingFiles.push({kind:'text',name:file.name,text:await file.text()});
+      }else{
+        addMsg('⚠ '+file.name+': send images, PDFs, or text/code files.','sys');
+      }
+    }catch(err){addMsg('⚠ Could not read '+file.name,'sys')}
+  }
+  e.target.value='';
+  renderPending();
+}
+function b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})}
+function renderPending(){
+  const row=document.getElementById('pfiles');
+  row.innerHTML=pendingFiles.map((f,i)=>'<div class="pfile">📎 '+esc(f.name)+'<span onclick="rmFile('+i+')">✕</span></div>').join('');
+  row.style.display=pendingFiles.length?'flex':'none';
+}
+function rmFile(i){pendingFiles.splice(i,1);renderPending()}
 
 function dc(d){return 'dv-'+d.replace(/\s+/g,'-')}
 
@@ -294,6 +441,11 @@ function init(){
 
   renderGrid();
   setupInput();
+
+  // Restore HQ conversation from memory
+  history=loadMem();
+  trimHistory();
+  if(history.some(m=>!m.hidden))renderHistory();
 }
 
 function filtered(){
@@ -338,7 +490,8 @@ document.getElementById('searchInput').addEventListener('input',e=>{searchQ=e.ta
 function tapCard(idx){
   const agent=AGENTS[idx];
   activeAgent=agent;
-  history=[];
+  history=loadMem();
+  trimHistory();
 
   // Highlight card
   document.querySelectorAll('.card').forEach(c=>c.classList.remove('on'));
@@ -362,11 +515,14 @@ function tapCard(idx){
   // Open chat
   goChat();
 
-  // System message
-  addMsg('⚡ '+agent.name+' — '+agent.div+' activated','sys');
-
-  // Fire intro
-  callAPI(`You are now ${agent.name}. Introduce yourself in 2 sentences in character, then ask what the user needs. No AI disclaimers. Stay in character completely.`,true);
+  // Rebuild this agent's conversation from memory
+  const shown=renderHistory();
+  if(shown){
+    addMsg('⚡ '+agent.name+' back online — remembers your conversation','sys');
+  }else{
+    addMsg('⚡ '+agent.name+' — '+agent.div+' activated','sys');
+    callAPI(introPrompt(agent),true);
+  }
 }
 
 function setQPs(agent){
@@ -385,7 +541,9 @@ function setQPs(agent){
 }
 
 function resetAgent(){
-  activeAgent=null;history=[];
+  activeAgent=null;
+  history=loadMem();
+  trimHistory();
   document.getElementById('chatOrb').textContent='🧠';
   document.getElementById('chatOrb').classList.remove('on');
   document.getElementById('chatName').textContent='Agency Intelligence';
@@ -393,7 +551,16 @@ function resetAgent(){
   document.getElementById('chatSub').classList.remove('on');
   document.getElementById('qps').innerHTML=DEFAULT_QPS.map(([l,p])=>`<div class="qp" onclick="sq('${p.replace(/'/g,"\'")}')"> ${l}</div>`).join('');
   document.querySelectorAll('.card.on').forEach(c=>c.classList.remove('on'));
+  renderHistory();
   addMsg('↺ Reset — all 231 agents ready.','sys');
+}
+
+function clearChat(){
+  clearMem();
+  history=[];
+  renderHistory();
+  addMsg('🗑 Memory wiped for this chat.','sys');
+  if(activeAgent)callAPI(introPrompt(activeAgent),true);
 }
 
 // NAV
@@ -409,20 +576,70 @@ function goAgents(){
 }
 
 // MESSAGES
-function addMsg(content,type,who){
+const ACTS='<div class="macts"><button onclick="copyMsg(this)">⧉ copy</button><button onclick="dlMsg(this)">⬇ save</button></div>';
+
+function addMsg(content,type,who,noActs){
   const msgs=document.getElementById('msgs');
   const w=document.createElement('div');
   w.className='msg '+type;
   if(type==='ai'){
-    w.innerHTML=`<div class="mwho">${who||'Agency Intelligence'}</div><div class="mb">${content.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;
-  }else if(type==='usr'){
-    w.innerHTML=`<div class="mb">${content}</div>`;
+    w.dataset.raw=content;
+    w.dataset.who=who||'Agency Intelligence';
+    w.innerHTML=`<div class="mwho">${esc(who||'Agency Intelligence')}</div><div class="mb">${md(content)}</div>`+(noActs?'':ACTS);
   }else{
-    w.innerHTML=`<div class="mb">${content}</div>`;
+    w.innerHTML=`<div class="mb">${esc(content).replace(/\n/g,'<br>')}</div>`;
   }
   msgs.appendChild(w);
   msgs.scrollTop=msgs.scrollHeight;
   return w;
+}
+
+function addUserMsg(ui){
+  const msgs=document.getElementById('msgs');
+  const w=document.createElement('div');
+  w.className='msg usr';
+  let files='';
+  (ui.files||[]).forEach(f=>{
+    files+=f.thumb?`<img class="uimg" src="${f.thumb}" alt="">`:`<span class="uchip">📎 ${esc(f.name)}</span>`;
+  });
+  w.innerHTML=`<div class="mb">${files}${files&&ui.text?'<br>':''}${esc(ui.text||'').replace(/\n/g,'<br>')}</div>`;
+  msgs.appendChild(w);
+  msgs.scrollTop=msgs.scrollHeight;
+  return w;
+}
+
+function addWelcome(){
+  addMsg("**Welcome to Agency HQ.**\n\nGo back, tap any agent card — I instantly become that specialist and work with you here.\n\nOr just ask me anything.",'ai','Agency Intelligence',true);
+}
+
+function renderHistory(){
+  const msgs=document.getElementById('msgs');
+  msgs.innerHTML='';
+  let shown=0;
+  for(const m of history){
+    if(m.hidden)continue;
+    if(m.role==='user'){
+      if(m.ui){addUserMsg(m.ui);shown++}
+    }else if(typeof m.content==='string'){
+      addMsg(m.content,'ai',(m.ui&&m.ui.who)||(activeAgent?activeAgent.name:'Agency Intelligence'));shown++;
+    }
+  }
+  if(!shown&&!activeAgent)addWelcome();
+  return shown;
+}
+
+function copyMsg(btn){
+  const raw=btn.closest('.msg').dataset.raw||'';
+  navigator.clipboard.writeText(raw).then(()=>{btn.textContent='✓ copied';setTimeout(()=>{btn.textContent='⧉ copy'},1200)}).catch(()=>{});
+}
+function dlMsg(btn){
+  const w=btn.closest('.msg');
+  const blob=new Blob([w.dataset.raw||''],{type:'text/markdown'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(w.dataset.who||'agent').toLowerCase().replace(/\s+/g,'-')+'-output.md';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
 
 function sq(text){
@@ -435,69 +652,134 @@ async function sendMsg(){
   if(busy)return;
   const inp=document.getElementById('ainput');
   const text=inp.value.trim();
-  if(!text)return;
+  const files=pendingFiles.slice();
+  if(!text&&!files.length)return;
   inp.value='';inp.style.height='auto';
-  addMsg(text,'usr');
-  await callAPI(text,false);
+  pendingFiles=[];renderPending();
+  addUserMsg({text,files:files.map(f=>({name:f.name,thumb:f.kind==='image'?('data:'+f.mime+';base64,'+f.data):null}))});
+  await callAPI(text,false,files);
 }
 
-// API
-async function callAPI(userMsg,isIntro=false){
+// API — streams the reply live; falls back to typewriter if the proxy can't stream
+async function callAPI(userMsg,isIntro=false,files=[]){
   if(busy&&!isIntro)return;
   busy=true;
   document.getElementById('sendBtn').disabled=true;
 
-  const thinkEl=document.createElement('div');
-  thinkEl.className='thinking';
-  thinkEl.innerHTML=`<span class="dots"><span></span><span></span><span></span></span> ${activeAgent?activeAgent.name+' thinking...':'Searching...'}`;
-  document.getElementById('msgs').appendChild(thinkEl);
-  document.getElementById('msgs').scrollTop=99999;
+  const who=activeAgent?activeAgent.name:'Agency Intelligence';
+  const system=buildSystem();
 
-  let system;
-  if(activeAgent){
-    const a=activeAgent;
-    system=`You ARE ${a.name} — a specialist AI agent.
-NAME: ${a.name} | DIVISION: ${a.div}
-DESCRIPTION: ${a.desc}
-VIBE: "${a.vibe}"
-YOUR METHODOLOGY:
-${a.system}
-
-RULES: Stay completely in character. Apply real frameworks and produce real deliverables. Be direct and opinionated. You ARE ${a.name} — never break character or mention being an AI.`;
+  let content;
+  if(files.length){
+    content=[];
+    for(const f of files){
+      if(f.kind==='image')content.push({type:'image',source:{type:'base64',media_type:f.mime,data:f.data}});
+      else if(f.kind==='pdf')content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:f.data}});
+      else content.push({type:'text',text:'[Attached file: '+f.name+']\n\n'+f.text});
+    }
+    content.push({type:'text',text:userMsg||'Take a look at what I attached.'});
   }else{
-    system=`You are Agency Intelligence — command brain of Agency HQ with knowledge of all 231 specialist agents across 16 divisions. Help users find the right agent, build teams, and get expert guidance. Be specific, direct, and action-oriented.`;
+    content=userMsg;
   }
 
-  if(!isIntro)history.push({role:'user',content:userMsg});
-  const messages=isIntro?[{role:'user',content:userMsg}]:[...history];
+  history.push({
+    role:'user',content,hidden:isIntro,
+    ui:isIntro?null:{text:userMsg,files:files.map(f=>({name:f.name,thumb:f.kind==='image'?('data:'+f.mime+';base64,'+f.data):null}))}
+  });
+  trimHistory();
+  const messages=history.map(m=>({role:m.role,content:m.content}));
+
+  const msgs=document.getElementById('msgs');
+  const thinkEl=document.createElement('div');
+  thinkEl.className='thinking';
+  thinkEl.innerHTML=`<span class="dots"><span></span><span></span><span></span></span> ${who} is typing...`;
+  msgs.appendChild(thinkEl);
+  msgs.scrollTop=msgs.scrollHeight;
+
+  let full='',el=null;
+  const paint=(txt,done)=>{
+    if(!el){thinkEl.remove();el=addMsg('','ai',who)}
+    const mb=el.querySelector('.mb');
+    mb.classList.toggle('streaming',!done);
+    mb.innerHTML=md(txt);
+    el.dataset.raw=txt;
+    msgs.scrollTop=msgs.scrollHeight;
+  };
 
   try{
-    const res=await fetch('https://agency-proxy-production.up.railway.app/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system,messages})
-    });
-    const data=await res.json();
-    thinkEl.remove();
-    const reply=data.content?.[0]?.text||'Something went wrong.';
-    const who=activeAgent?activeAgent.name:'Agency Intelligence';
-    addMsg(reply,'ai',who);
-    history.push({role:'assistant',content:reply});
-    if(!isIntro)history.push({role:'user',content:userMsg});
-    if(history.length>20)history=history.slice(-20);
+    const payload={model:MODEL,max_tokens:4096,system,messages};
+    let res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,stream:true})});
+    const ct=res.headers.get('content-type')||'';
+
+    if(res.ok&&ct.includes('text/event-stream')){
+      // Real streaming — words appear as the agent writes them
+      const reader=res.body.getReader(),dec=new TextDecoder();
+      let buf='';
+      while(true){
+        const {done,value}=await reader.read();
+        if(done)break;
+        buf+=dec.decode(value,{stream:true});
+        const lines=buf.split('\n');buf=lines.pop();
+        for(const line of lines){
+          if(!line.startsWith('data:'))continue;
+          const d=line.slice(5).trim();
+          if(!d||d==='[DONE]')continue;
+          let ev;try{ev=JSON.parse(d)}catch(e){continue}
+          if(ev.type==='content_block_delta'&&ev.delta&&typeof ev.delta.text==='string'){full+=ev.delta.text;paint(full)}
+          else if(ev.type==='error')throw new Error((ev.error&&ev.error.message)||'Stream error');
+        }
+      }
+    }else{
+      // Proxy doesn't stream — fetch the full reply, then typewriter it
+      if(!res.ok||!ct.includes('application/json')){
+        res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      }
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message||'API error');
+      full=(data.content&&data.content[0]&&data.content[0].text)||'';
+      if(!full)throw new Error('Empty reply — try again');
+      await typeOut(full,paint);
+    }
+
+    if(!full)throw new Error('Empty reply — try again');
+    paint(full,true);
+    history.push({role:'assistant',content:full,ui:{who}});
+    saveMem();
   }catch(err){
     thinkEl.remove();
-    addMsg('Connection error. Check your internet and try again.','ai','System');
+    if(full){
+      // keep whatever partially streamed
+      paint(full,true);
+      history.push({role:'assistant',content:full,ui:{who}});
+      saveMem();
+    }else{
+      if(el)el.remove();
+      if(history.length&&history[history.length-1].role==='user')history.pop();
+      addMsg('⚠ '+((err&&err.message)||'Connection error — try again.'),'sys');
+    }
   }
 
   busy=false;
   document.getElementById('sendBtn').disabled=false;
 }
 
+function typeOut(full,paint){
+  return new Promise(resolve=>{
+    let i=0;
+    const chunk=Math.max(2,Math.round(full.length/160));
+    (function step(){
+      i=Math.min(full.length,i+chunk);
+      paint(full.slice(0,i));
+      if(i<full.length)setTimeout(step,14);else resolve();
+    })();
+  });
+}
+
 function setupInput(){
   const inp=document.getElementById('ainput');
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}});
   inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,110)+'px'},{passive:true});
+  document.getElementById('fileInput').addEventListener('change',onFiles);
 }
 
 // START - no boot screen, just load
