@@ -288,7 +288,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
       <textarea class="ainput" id="ainput" placeholder="Talk to the agent..." rows="1"></textarea>
       <button class="sbtn" id="sendBtn" onclick="sendOrStop()">↑</button>
     </div>
-    <input type="file" id="fileInput" multiple style="display:none" accept="image/*,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml,.toml,.ini,.log,.sql,.sh">
+    <input type="file" id="fileInput" multiple style="display:none" accept="image/*,.pdf,.apk,.aab,.apks,.xapk,.txt,.md,.markdown,.csv,.tsv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml,.toml,.ini,.log,.sql,.sh">
   </div>
 </div>
 
@@ -400,11 +400,135 @@ function md(src){
   return out;
 }
 
+// APK ANALYSIS — the binary never leaves the device; a locally-extracted
+// summary (files, libs, permissions, package info) is sent to the agent
+function parseZip(buf){
+  const dv=new DataView(buf);
+  const min=Math.max(0,buf.byteLength-65557);
+  let eocd=-1;
+  for(let i=buf.byteLength-22;i>=min;i--){
+    if(dv.getUint32(i,true)===0x06054b50){eocd=i;break}
+  }
+  if(eocd<0)throw new Error('not a valid APK/ZIP file');
+  const count=dv.getUint16(eocd+10,true);
+  let off=dv.getUint32(eocd+16,true);
+  const entries=[];
+  for(let n=0;n<count;n++){
+    if(dv.getUint32(off,true)!==0x02014b50)break;
+    const nlen=dv.getUint16(off+28,true),elen=dv.getUint16(off+30,true),clen=dv.getUint16(off+32,true);
+    entries.push({
+      name:new TextDecoder().decode(new Uint8Array(buf,off+46,nlen)),
+      method:dv.getUint16(off+10,true),
+      csize:dv.getUint32(off+20,true),
+      usize:dv.getUint32(off+24,true),
+      lho:dv.getUint32(off+42,true)
+    });
+    off+=46+nlen+elen+clen;
+  }
+  return {dv,entries};
+}
+async function unzipEntry(buf,dv,e){
+  if(dv.getUint32(e.lho,true)!==0x04034b50)return null;
+  const nlen=dv.getUint16(e.lho+26,true),elen=dv.getUint16(e.lho+28,true);
+  const data=new Uint8Array(buf,e.lho+30+nlen+elen,e.csize);
+  if(e.method===0)return data;
+  if(e.method===8&&typeof DecompressionStream!=='undefined'){
+    try{
+      const resp=new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')));
+      return new Uint8Array(await resp.arrayBuffer());
+    }catch(err){return null}
+  }
+  return null;
+}
+function axmlStrings(u8){
+  try{
+    const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+    if(dv.getUint16(0,true)!==0x0003)return[];
+    const p=8;
+    if(dv.getUint16(p,true)!==0x0001)return[];
+    const n=dv.getUint32(p+8,true);
+    const flags=dv.getUint32(p+16,true);
+    const strStart=dv.getUint32(p+20,true);
+    const utf8=(flags&0x100)!==0;
+    const out=[];
+    for(let i=0;i<n;i++){
+      let q=p+strStart+dv.getUint32(p+28+i*4,true);
+      try{
+        if(utf8){
+          let c=dv.getUint8(q);q+=(c&0x80)?2:1;
+          let len=dv.getUint8(q);
+          if(len&0x80){len=((len&0x7f)<<8)|dv.getUint8(q+1);q+=2}else q+=1;
+          out.push(new TextDecoder().decode(new Uint8Array(u8.buffer,u8.byteOffset+q,len)));
+        }else{
+          let len=dv.getUint16(q,true);q+=2;
+          if(len&0x8000){len=((len&0x7fff)<<16)|dv.getUint16(q,true);q+=2}
+          out.push(new TextDecoder('utf-16le').decode(new Uint8Array(u8.buffer,u8.byteOffset+q,len*2)));
+        }
+      }catch(err){}
+    }
+    return out;
+  }catch(err){return[]}
+}
+async function apkSummary(file){
+  const buf=await file.arrayBuffer();
+  const {dv,entries}=parseZip(buf);
+  const MB=b=>(b/1048576).toFixed(2)+' MB';
+  const dex=entries.filter(e=>/^classes\d*\.dex$/.test(e.name));
+  const archs=[...new Set(entries.filter(e=>e.name.startsWith('lib/')).map(e=>e.name.split('/')[1]))];
+  const nAssets=entries.filter(e=>e.name.startsWith('assets/')).length;
+  const nRes=entries.filter(e=>e.name.startsWith('res/')).length;
+  const v1sig=entries.some(e=>/^META-INF\/.+\.(RSA|DSA|EC)$/i.test(e.name));
+  const kotlin=entries.some(e=>e.name.startsWith('kotlin/')||e.name.endsWith('.kotlin_builtins'));
+  const flutter=entries.some(e=>e.name.includes('libflutter.so')||e.name.startsWith('assets/flutter_assets'));
+  const rn=entries.some(e=>e.name==='assets/index.android.bundle');
+  const cordova=entries.some(e=>e.name.startsWith('assets/www/'));
+  let manifest='';
+  const me=entries.find(e=>e.name==='AndroidManifest.xml');
+  if(me){
+    const raw=await unzipEntry(buf,dv,me);
+    if(raw){
+      const strs=axmlStrings(raw);
+      const perms=[...new Set(strs.filter(s=>/\.permission\.[A-Z_]+$/.test(s)))];
+      const ids=[...new Set(strs.filter(s=>/^[a-zA-Z][\w$]*(\.[a-zA-Z][\w$]*){2,}$/.test(s)&&!/\.permission\./.test(s)&&!s.startsWith('android.intent')))].slice(0,20);
+      const vers=[...new Set(strs.filter(s=>/^\d+(\.\d+)+([-.]?\w+)*$/.test(s)))].slice(0,3);
+      if(perms.length)manifest+='\nPermissions requested ('+perms.length+'):\n'+perms.map(p=>'- '+p).join('\n');
+      if(vers.length)manifest+='\nVersion strings found: '+vers.join(', ');
+      if(ids.length)manifest+='\nPackage/component identifiers found (first is usually the app package):\n'+ids.slice(0,10).map(s=>'- '+s).join('\n');
+    }else{
+      manifest='\n(AndroidManifest.xml could not be decompressed in this browser)';
+    }
+  }
+  const biggest=entries.slice().sort((a,b)=>b.usize-a.usize).slice(0,8)
+    .map(e=>'- '+e.name+' ('+MB(e.usize)+')').join('\n');
+  const stack=[flutter&&'Flutter',rn&&'React Native',cordova&&'Cordova/WebView',kotlin&&'Kotlin'].filter(Boolean).join(', ')||'likely native Java/Kotlin';
+  return `[Attached Android APK: ${file.name}]
+(The binary itself is not sent — this is an automatic local analysis of its contents.)
+
+APK size: ${MB(file.size)} | files inside: ${entries.length}
+DEX files: ${dex.length?dex.map(d=>d.name+' ('+MB(d.usize)+')').join(', '):'none'}
+Native libs: ${archs.length?archs.join(', '):'none (no lib/ folder)'}
+Resources: ${nRes} res files, ${nAssets} asset files
+v1 signature (META-INF cert): ${v1sig?'present':'not present (may use v2/v3 scheme only)'}
+Detected stack: ${stack}
+${manifest}
+
+Largest files:
+${biggest}`;
+}
+
 // FILE UPLOAD
 const TEXT_EXT=/\.(txt|md|markdown|csv|tsv|json|js|jsx|ts|tsx|py|rb|go|rs|java|c|cpp|h|html|css|xml|yml|yaml|toml|ini|log|sql|sh)$/i;
 function pickFiles(){document.getElementById('fileInput').click()}
 async function onFiles(e){
   for(const file of Array.from(e.target.files)){
+    if(/\.(apk|aab|apks|xapk)$/i.test(file.name)){
+      if(file.size>300*1024*1024){addMsg('⚠ '+file.name+' is over 300MB — too big to analyze.','sys');continue}
+      addMsg('🔍 Analyzing '+file.name+' locally (the APK itself never leaves your device)...','sys');
+      try{
+        pendingFiles.push({kind:'text',name:file.name,text:await apkSummary(file)});
+      }catch(err){addMsg('⚠ '+file.name+': '+(err.message||'could not parse this APK'),'sys')}
+      continue;
+    }
     if(file.size>4*1024*1024){addMsg('⚠ '+file.name+' is over 4MB — too big to send.','sys');continue}
     try{
       if(file.type.startsWith('image/')){
@@ -689,7 +813,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     for(const f of files){
       if(f.kind==='image')content.push({type:'image',source:{type:'base64',media_type:f.mime,data:f.data}});
       else if(f.kind==='pdf')content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:f.data}});
-      else content.push({type:'text',text:'[Attached file: '+f.name+']\n\n'+f.text});
+      else content.push({type:'text',text:f.text.startsWith('[Attached')?f.text:'[Attached file: '+f.name+']\n\n'+f.text});
     }
     content.push({type:'text',text:userMsg||'Take a look at what I attached.'});
   }else{
