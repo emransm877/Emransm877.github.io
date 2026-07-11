@@ -440,80 +440,275 @@ async function unzipEntry(buf,dv,e){
   }
   return null;
 }
-function axmlStrings(u8){
-  try{
-    const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
-    if(dv.getUint16(0,true)!==0x0003)return[];
-    const p=8;
-    if(dv.getUint16(p,true)!==0x0001)return[];
-    const n=dv.getUint32(p+8,true);
-    const flags=dv.getUint32(p+16,true);
-    const strStart=dv.getUint32(p+20,true);
-    const utf8=(flags&0x100)!==0;
-    const out=[];
-    for(let i=0;i<n;i++){
-      let q=p+strStart+dv.getUint32(p+28+i*4,true);
-      try{
-        if(utf8){
-          let c=dv.getUint8(q);q+=(c&0x80)?2:1;
-          let len=dv.getUint8(q);
-          if(len&0x80){len=((len&0x7f)<<8)|dv.getUint8(q+1);q+=2}else q+=1;
-          out.push(new TextDecoder().decode(new Uint8Array(u8.buffer,u8.byteOffset+q,len)));
-        }else{
-          let len=dv.getUint16(q,true);q+=2;
-          if(len&0x8000){len=((len&0x7fff)<<16)|dv.getUint16(q,true);q+=2}
-          out.push(new TextDecoder('utf-16le').decode(new Uint8Array(u8.buffer,u8.byteOffset+q,len*2)));
-        }
-      }catch(err){}
+// Full binary-XML (AXML) decode into a real element tree
+function axmlDecode(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  if(dv.getUint16(0,true)!==0x0003)return null;
+  // locate string pool chunk (type 0x0001) right after the 8-byte file header
+  let p=8;
+  if(dv.getUint16(p,true)!==0x0001)return null;
+  const poolSize=dv.getUint32(p+4,true);
+  const nStr=dv.getUint32(p+8,true);
+  const flags=dv.getUint32(p+16,true);
+  const strStart=dv.getUint32(p+20,true);
+  const utf8=(flags&0x100)!==0;
+  const strings=[];
+  for(let i=0;i<nStr;i++){
+    let q=p+strStart+dv.getUint32(p+28+i*4,true);
+    try{
+      if(utf8){
+        let c=u8[q];q+=(c&0x80)?2:1;
+        let len=u8[q];
+        if(len&0x80){len=((len&0x7f)<<8)|u8[q+1];q+=2}else q+=1;
+        strings.push(new TextDecoder().decode(u8.subarray(q,q+len)));
+      }else{
+        let len=dv.getUint16(q,true);q+=2;
+        if(len&0x8000){len=((len&0x7fff)<<16)|dv.getUint16(q,true);q+=2}
+        strings.push(new TextDecoder('utf-16le').decode(u8.subarray(q,q+len*2)));
+      }
+    }catch(err){strings.push('')}
+  }
+  const S=i=>(i===0xffffffff||i<0)?null:(strings[i]??null);
+  // typed value -> readable
+  const val=(dt,data)=>{
+    if(dt===0x03)return S(data);              // string
+    if(dt===0x12)return data!==0?'true':'false'; // boolean
+    if(dt===0x10)return String(data|0);       // int dec
+    if(dt===0x11)return '0x'+(data>>>0).toString(16); // int hex
+    if(dt===0x04)return (new DataView(new ArrayBuffer(4)),(data>>>0)).toString(); // float-ish
+    return '@'+(data>>>0).toString(16);       // resource ref etc.
+  };
+  // walk chunks after the string pool
+  let off=p+poolSize;
+  const root=[]; const stack=[{children:root}];
+  const end=u8.length;
+  while(off+8<=end){
+    const type=dv.getUint16(off,true);
+    const hsize=dv.getUint16(off+2,true);
+    const csize=dv.getUint32(off+4,true);
+    if(csize<8)break;
+    if(type===0x0102){ // START_ELEMENT
+      const hbase=off+hsize;
+      const name=S(dv.getUint32(hbase+4,true));
+      const attrStart=dv.getUint16(hbase+8,true)||20;
+      const attrSize=dv.getUint16(hbase+10,true)||20;
+      const attrCount=dv.getUint16(hbase+12,true);
+      let ao=hbase+attrStart;
+      const attrs={};
+      for(let a=0;a<attrCount;a++){
+        const an=S(dv.getUint32(ao+4,true));
+        const dt=u8[ao+15];
+        const data=dv.getUint32(ao+16,true);
+        if(an)attrs[an]=val(dt,data);
+        ao+=attrSize;
+      }
+      const node={name,attrs,children:[]};
+      stack[stack.length-1].children.push(node);
+      stack.push(node);
+    }else if(type===0x0103){ // END_ELEMENT
+      if(stack.length>1)stack.pop();
     }
-    return out;
-  }catch(err){return[]}
+    off+=csize;
+  }
+  return root[0]||null;
 }
+function axmlFindAll(node,name,out){
+  out=out||[];
+  if(!node)return out;
+  if(node.name===name)out.push(node);
+  (node.children||[]).forEach(c=>axmlFindAll(c,name,out));
+  return out;
+}
+
+// DEX bytecode string mining — pulls every string constant out of the classes
+function dexStrings(u8,budget){
+  const out=[];
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  if(u8.length<112||dv.getUint32(0,false)!==0x6465780a)return out; // "dex\n"
+  const size=dv.getUint32(56,true),soff=dv.getUint32(60,true);
+  const cap=Math.min(size,budget||120000);
+  const dec=new TextDecoder();
+  for(let i=0;i<cap;i++){
+    const o=dv.getUint32(soff+i*4,true);
+    if(o<=0||o>=u8.length)continue;
+    let q=o,b;do{b=u8[q++]}while(b&0x80&&q<u8.length); // skip uleb128 length
+    let e=q;while(e<u8.length&&u8[e]!==0)e++;
+    if(e-q>0&&e-q<400)out.push(dec.decode(u8.subarray(q,e)));
+  }
+  return out;
+}
+
+// Third-party SDK / tracker fingerprints (matched against class descriptors)
+const SDK_SIGS=[
+  ['Lcom/google/firebase','Firebase'],['Lcom/google/android/gms/ads','Google AdMob'],
+  ['Lcom/google/android/gms','Google Play Services'],['Lcom/facebook','Facebook SDK'],
+  ['Lcom/appsflyer','AppsFlyer (attribution)'],['Lcom/adjust','Adjust (attribution)'],
+  ['Lcom/flurry','Flurry Analytics'],['Lcom/onesignal','OneSignal (push)'],
+  ['Lcom/unity3d','Unity Ads / Engine'],['Lio/branch','Branch (deep links)'],
+  ['Lcom/mixpanel','Mixpanel'],['Lcom/amplitude','Amplitude'],['Lcom/segment','Segment'],
+  ['Lcom/bugsnag','Bugsnag'],['Lio/sentry','Sentry (crash)'],['Lcom/crashlytics','Crashlytics'],
+  ['Lretrofit2','Retrofit (HTTP)'],['Lokhttp3','OkHttp (HTTP)'],['Lcom/bumptech/glide','Glide (images)'],
+  ['Lcom/squareup/picasso','Picasso (images)'],['Lcom/google/android/exoplayer','ExoPlayer'],
+  ['Lio/reactivex','RxJava'],['Lkotlinx/coroutines','Kotlin Coroutines'],['Ldagger','Dagger DI'],
+  ['Lio/realm','Realm DB'],['Landroidx/room','Room DB'],['Lcom/squareup/moshi','Moshi (JSON)'],
+  ['Lcom/google/gson','Gson (JSON)'],['Lcom/mopub','MoPub Ads'],['Lcom/ironsource','ironSource Ads'],
+  ['Lcom/applovin','AppLovin Ads'],['Lcom/vungle','Vungle Ads'],['Lcom/chartboost','Chartboost Ads'],
+  ['Lcom/tapjoy','Tapjoy'],['Lcom/yandex','Yandex'],['Lcom/tencent','Tencent SDK'],
+  ['Lcom/alibaba','Alibaba SDK'],['Lcordova','Apache Cordova'],['Lio/flutter','Flutter engine']
+];
+const PERM_RISK={
+  'android.permission.READ_SMS':'read text messages','android.permission.RECEIVE_SMS':'intercept incoming SMS',
+  'android.permission.SEND_SMS':'send SMS (can cost money)','android.permission.READ_CONTACTS':'read all contacts',
+  'android.permission.ACCESS_FINE_LOCATION':'precise GPS location','android.permission.RECORD_AUDIO':'record from the microphone',
+  'android.permission.CAMERA':'use the camera','android.permission.READ_CALL_LOG':'read call history',
+  'android.permission.READ_EXTERNAL_STORAGE':'read files on storage','android.permission.SYSTEM_ALERT_WINDOW':'draw over other apps (overlay attacks)',
+  'android.permission.REQUEST_INSTALL_PACKAGES':'install other APKs','android.permission.QUERY_ALL_PACKAGES':'list every installed app',
+  'android.permission.BIND_ACCESSIBILITY_SERVICE':'accessibility service (can read/control the screen)','android.permission.READ_PHONE_STATE':'read phone identity/number'
+};
+
 async function apkSummary(file){
   const buf=await file.arrayBuffer();
   const {dv,entries}=parseZip(buf);
   const MB=b=>(b/1048576).toFixed(2)+' MB';
-  const dex=entries.filter(e=>/^classes\d*\.dex$/.test(e.name));
-  const archs=[...new Set(entries.filter(e=>e.name.startsWith('lib/')).map(e=>e.name.split('/')[1]))];
+  const dexE=entries.filter(e=>/^classes\d*\.dex$/.test(e.name));
+  const archs=[...new Set(entries.filter(e=>e.name.startsWith('lib/')&&e.name.split('/').length>2).map(e=>e.name.split('/')[1]))];
   const nAssets=entries.filter(e=>e.name.startsWith('assets/')).length;
   const nRes=entries.filter(e=>e.name.startsWith('res/')).length;
   const v1sig=entries.some(e=>/^META-INF\/.+\.(RSA|DSA|EC)$/i.test(e.name));
-  const kotlin=entries.some(e=>e.name.startsWith('kotlin/')||e.name.endsWith('.kotlin_builtins'));
   const flutter=entries.some(e=>e.name.includes('libflutter.so')||e.name.startsWith('assets/flutter_assets'));
   const rn=entries.some(e=>e.name==='assets/index.android.bundle');
   const cordova=entries.some(e=>e.name.startsWith('assets/www/'));
-  let manifest='';
+  const unity=entries.some(e=>e.name.startsWith('assets/bin/Data')||e.name.includes('libunity.so'));
+  const xamarin=entries.some(e=>e.name.startsWith('assemblies/')||e.name.includes('libmonodroid'));
+
+  // ---- MANIFEST (full tree decode) ----
+  let pkg='?',vName='?',vCode='?',minSdk='?',tgtSdk='?';
+  let perms=[],activities=[],services=[],receivers=[],providers=[],launcher=null,deepLinks=[],appFlags={};
   const me=entries.find(e=>e.name==='AndroidManifest.xml');
   if(me){
     const raw=await unzipEntry(buf,dv,me);
-    if(raw){
-      const strs=axmlStrings(raw);
-      const perms=[...new Set(strs.filter(s=>/\.permission\.[A-Z_]+$/.test(s)))];
-      const ids=[...new Set(strs.filter(s=>/^[a-zA-Z][\w$]*(\.[a-zA-Z][\w$]*){2,}$/.test(s)&&!/\.permission\./.test(s)&&!s.startsWith('android.intent')))].slice(0,20);
-      const vers=[...new Set(strs.filter(s=>/^\d+(\.\d+)+([-.]?\w+)*$/.test(s)))].slice(0,3);
-      if(perms.length)manifest+='\nPermissions requested ('+perms.length+'):\n'+perms.map(p=>'- '+p).join('\n');
-      if(vers.length)manifest+='\nVersion strings found: '+vers.join(', ');
-      if(ids.length)manifest+='\nPackage/component identifiers found (first is usually the app package):\n'+ids.slice(0,10).map(s=>'- '+s).join('\n');
-    }else{
-      manifest='\n(AndroidManifest.xml could not be decompressed in this browser)';
+    const root=raw&&axmlDecode(raw);
+    if(root){
+      pkg=root.attrs.package||pkg;
+      vName=root.attrs.versionName||vName;
+      vCode=root.attrs.versionCode||vCode;
+      const us=axmlFindAll(root,'uses-sdk')[0];
+      if(us){minSdk=us.attrs.minSdkVersion||minSdk;tgtSdk=us.attrs.targetSdkVersion||tgtSdk}
+      perms=[...new Set(axmlFindAll(root,'uses-permission').map(n=>n.attrs.name).filter(Boolean))];
+      const app=axmlFindAll(root,'application')[0];
+      if(app){
+        ['debuggable','allowBackup','usesCleartextTraffic','networkSecurityConfig','name'].forEach(k=>{if(app.attrs[k]!=null)appFlags[k]=app.attrs[k]});
+      }
+      const comp=(tag,arr)=>axmlFindAll(root,tag).forEach(n=>{
+        const nm=n.attrs.name||'?';
+        const exp=n.attrs.exported;
+        arr.push({name:nm,exported:exp});
+        const filters=axmlFindAll(n,'intent-filter');
+        filters.forEach(f=>{
+          const acts=axmlFindAll(f,'action').map(a=>a.attrs.name);
+          const cats=axmlFindAll(f,'category').map(c=>c.attrs.name);
+          if(acts.includes('android.intent.action.MAIN')&&cats.includes('android.intent.category.LAUNCHER'))launcher=nm;
+          axmlFindAll(f,'data').forEach(d=>{if(d.attrs.scheme&&/^https?$/.test(d.attrs.scheme)===false||d.attrs.host){deepLinks.push((d.attrs.scheme||'')+'://'+(d.attrs.host||'')+(d.attrs.pathPrefix||d.attrs.path||''))}});
+        });
+      });
+      comp('activity',activities);comp('service',services);comp('receiver',receivers);comp('provider',providers);
     }
   }
-  const biggest=entries.slice().sort((a,b)=>b.usize-a.usize).slice(0,8)
-    .map(e=>'- '+e.name+' ('+MB(e.usize)+')').join('\n');
-  const stack=[flutter&&'Flutter',rn&&'React Native',cordova&&'Cordova/WebView',kotlin&&'Kotlin'].filter(Boolean).join(', ')||'likely native Java/Kotlin';
-  return `[Attached Android APK: ${file.name}]
-(The binary itself is not sent — this is an automatic local analysis of its contents.)
 
-APK size: ${MB(file.size)} | files inside: ${entries.length}
-DEX files: ${dex.length?dex.map(d=>d.name+' ('+MB(d.usize)+')').join(', '):'none'}
-Native libs: ${archs.length?archs.join(', '):'none (no lib/ folder)'}
-Resources: ${nRes} res files, ${nAssets} asset files
-v1 signature (META-INF cert): ${v1sig?'present':'not present (may use v2/v3 scheme only)'}
-Detected stack: ${stack}
-${manifest}
+  // ---- DEX teardown (strings, URLs, secrets, SDKs) ----
+  let allStrings=[],budget=200000,dexParsed=0;
+  for(const e of dexE.sort((a,b)=>a.usize-b.usize)){
+    if(budget<=0)break;
+    const raw=await unzipEntry(buf,dv,e);
+    if(!raw)continue;
+    const s=dexStrings(raw,budget);
+    allStrings=allStrings.concat(s);budget-=s.length;dexParsed++;
+  }
+  const uniq=arr=>[...new Set(arr)];
+  const classDescr=uniq(allStrings.filter(s=>s.length>3&&s[0]==='L'&&s.endsWith(';')));
+  const sdks=SDK_SIGS.filter(([pre])=>classDescr.some(c=>c.startsWith(pre))).map(([,name])=>name);
+  const urls=uniq(allStrings.filter(s=>/^https?:\/\/[^\s"'<>]+$/i.test(s)&&s.length<160)).slice(0,40);
+  const secretPats=[
+    [/AIza[0-9A-Za-z_\-]{35}/,'Google API key'],[/AKIA[0-9A-Z]{16}/,'AWS access key'],
+    [/sk_live_[0-9A-Za-z]{16,}/,'Stripe secret key'],[/gh[pousr]_[0-9A-Za-z]{20,}/,'GitHub token'],
+    [/xox[baprs]-[0-9A-Za-z-]{10,}/,'Slack token'],[/-----BEGIN [A-Z ]*PRIVATE KEY-----/,'Private key'],
+    [/eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}/,'JWT token'],
+    [/[0-9]+:[0-9]{8,}:android:[0-9a-f]+/,'Firebase app id'],
+    [/[0-9a-f]{32}-[a-z0-9]+\.apps\.googleusercontent\.com/,'Google OAuth client']
+  ];
+  const secrets=[];
+  for(const s of allStrings){
+    for(const [re,label] of secretPats){const m=s.match(re);if(m){secrets.push(label+': '+m[0].slice(0,52));break}}
+    if(secrets.length>25)break;
+  }
+  const endpoints=uniq(allStrings.filter(s=>/\.(firebaseio\.com|firebasedatabase\.app|amazonaws\.com|herokuapp\.com|onrender\.com|railway\.app|supabase\.co|mongodb\.net)/i.test(s)&&s.length<120)).slice(0,20);
 
-Largest files:
-${biggest}`;
+  // ---- SIGNER ----
+  let signer='';
+  const certE=entries.find(e=>/^META-INF\/.+\.(RSA|DSA|EC)$/i.test(e.name));
+  if(certE){
+    const c=await unzipEntry(buf,dv,certE);
+    if(c){
+      const txt=new TextDecoder('latin1').decode(c);
+      const cn=txt.match(/\x06\x03\x55\x04\x03[\x0c\x13\x16]([\s\S])/);
+      const names=[...txt.matchAll(/(?:CN|O|OU)=([\w .,\-@]+)/g)].map(m=>m[0]).slice(0,4);
+      const printable=[...txt.matchAll(/[\x20-\x7e]{4,}/g)].map(m=>m[0]).filter(s=>/[A-Za-z]{3}/.test(s));
+      signer=names.length?names.join(', '):(printable.slice(0,6).join(' | ')||'(certificate present, owner not extractable in-browser)');
+    }
+  }
+
+  const stack=[flutter&&'Flutter',rn&&'React Native',cordova&&'Cordova/WebView',unity&&'Unity',xamarin&&'Xamarin/.NET'].filter(Boolean).join(', ')||'Native Android (Java/Kotlin)';
+  const biggest=entries.slice().sort((a,b)=>b.usize-a.usize).slice(0,10).map(e=>'- '+e.name+' ('+MB(e.usize)+')').join('\n');
+  const list=(arr,n)=>arr.length?arr.slice(0,n).map(x=>'- '+x).join('\n')+(arr.length>n?`\n  …and ${arr.length-n} more`:''):'- (none found)';
+  const compLine=arr=>arr.length?`${arr.length} total; exported: ${arr.filter(c=>c.exported==='true').length}`:'0';
+  const permLines=perms.length?perms.map(p=>{const r=PERM_RISK[p];return '- '+p+(r?'  ⚠ '+r:'')}).join('\n'):'- (none declared)';
+  const risky=perms.filter(p=>PERM_RISK[p]);
+
+  return `[Attached Android APK: ${file.name} — full local teardown]
+(The binary never leaves the device. Everything below was extracted in-browser from the APK's ZIP, decoded AndroidManifest.xml, and DEX bytecode string tables.)
+
+## Identity
+- Package: ${pkg}
+- Version: ${vName} (code ${vCode})
+- SDK: min ${minSdk}, target ${tgtSdk}
+- Stack: ${stack}
+- APK size: ${MB(file.size)} | ${entries.length} files | ${dexE.length} DEX (${dexParsed} parsed) | native ABIs: ${archs.join(', ')||'none'}
+- Signature: v1 cert ${v1sig?'present':'absent (v2/v3 only)'}${signer?'\n- Signer: '+signer:''}
+- Launcher activity: ${launcher||'(not detected)'}
+
+## Manifest flags
+- debuggable: ${appFlags.debuggable||'false'}${appFlags.debuggable==='true'?'  ⚠ ships debuggable':''}
+- allowBackup: ${appFlags.allowBackup??'(default true)'}${appFlags.allowBackup!=='false'?'  ⚠ data backupable':''}
+- usesCleartextTraffic: ${appFlags.usesCleartextTraffic??'(default)'}${appFlags.usesCleartextTraffic==='true'?'  ⚠ allows plain HTTP':''}
+- Application class: ${appFlags.name||'(default)'}
+
+## Components
+- Activities: ${compLine(activities)}
+- Services: ${compLine(services)}
+- Receivers: ${compLine(receivers)}
+- Providers: ${compLine(providers)}
+- Deep links: ${deepLinks.length?deepLinks.slice(0,10).join(', '):'(none)'}
+
+## Permissions (${perms.length}, ${risky.length} sensitive)
+${permLines}
+
+## Third-party SDKs / trackers (${sdks.length})
+${list(sdks,40)}
+
+## Network endpoints / URLs found in code (${urls.length})
+${list(urls,25)}
+
+## Backend services referenced (${endpoints.length})
+${list(endpoints,20)}
+
+## ⚠ Possible hardcoded secrets (${secrets.length})
+${secrets.length?secrets.map(s=>'- '+s).join('\n'):'- (none matched known key patterns)'}
+
+## Largest files
+${biggest}
+
+---
+TASK FOR YOU: Give a complete, human teardown of this app the way a sharp reverse-engineer would explain it to a friend — what the app almost certainly IS and does, what the permissions + SDKs reveal about its business model and data collection, any real security/privacy red flags (debuggable, cleartext, exported components, hardcoded secrets, aggressive trackers), and a plain-English verdict on whether it looks trustworthy. Be specific and opinionated, cite the evidence above, and don't hedge with disclaimers. If something's inconclusive, say so briefly and move on.`;
 }
 
 // FILE UPLOAD
