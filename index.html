@@ -234,6 +234,28 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 @media(min-width:480px){.grid{grid-template-columns:repeat(3,1fr)}}
 @media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
 
+/* ===== DESKTOP: centered app, no full-bleed stretch ===== */
+@media(min-width:900px){
+  html,body{font-size:16.5px}
+  /* full-width bars, but their CONTENT is centered to a comfortable column */
+  .hd,.fpills{padding-left:max(28px,calc((100% - 1160px)/2));padding-right:max(28px,calc((100% - 1160px)/2))}
+  .main{padding:28px max(28px,calc((100% - 1160px)/2))}
+  .grid{grid-template-columns:repeat(5,1fr);gap:14px}
+  .chat-hd,.chat-foot{padding-left:max(28px,calc((100% - 780px)/2));padding-right:max(28px,calc((100% - 780px)/2))}
+  .msgs{padding:32px 0}
+  .msg,.tool,.artifact,.thinking,.msg.sys{max-width:720px}
+  .msgs>*{margin-left:auto;margin-right:auto}
+  /* compact, centered bottom nav instead of a stretched bar */
+  .bnav{left:50%;right:auto;transform:translateX(-50%);width:360px;border:1px solid var(--border);border-top:1px solid var(--border);border-radius:16px 16px 0 0}
+  .chat-panel{bottom:calc(58px + env(safe-area-inset-bottom))}
+  .picker-hd{padding-left:max(28px,calc((100% - 780px)/2));padding-right:max(28px,calc((100% - 780px)/2))}
+  .picker-list{max-width:780px;margin:0 auto;width:100%}
+  .card{min-height:110px}
+}
+@media(min-width:1400px){
+  .grid{grid-template-columns:repeat(6,1fr)}
+}
+
 </style>
 </head>
 <body>
@@ -1067,7 +1089,7 @@ const TOOLS=[
   {name:'run_javascript',description:'Execute JavaScript in a sandbox and get the result. Use this for ANY real calculation, math, data processing, parsing/transforming text, working with the contents of attached files, generating structured data, or verifying logic — never do arithmetic in your head, run it. The last expression or an explicit return value is captured, and console.log output is returned. No DOM or network access.',input_schema:{type:'object',properties:{code:{type:'string',description:'JavaScript source to execute'}},required:['code']}},
   {name:'web_search',description:'Search the live web. Returns result titles, URLs and snippets. Use whenever the user asks about current events, recent facts, prices, people, products, or anything you are not certain about or that may have changed since your training.',input_schema:{type:'object',properties:{query:{type:'string',description:'The search query'}},required:['query']}},
   {name:'fetch_url',description:'Fetch a web page or API endpoint and return its readable text content. Use to actually read an article, docs page, or link the user gives you, or a promising result from web_search.',input_schema:{type:'object',properties:{url:{type:'string',description:'Full http(s) URL to read'}},required:['url']}},
-  {name:'create_file',description:'Create a real downloadable file for the user, shown in the chat with a preview and download buttons. Use this whenever the user wants something to keep or download: a document, report, letter, spreadsheet, code file, config, or a VECTOR graphic/icon/diagram/logo (write those as clean SVG markup). For photographic or painted/artistic raster images, use generate_image instead. Produce the full, final content — no placeholders. Do NOT also paste the whole file into your reply; a short sentence plus the file card is enough.',input_schema:{type:'object',properties:{filename:{type:'string',description:'File name with extension, e.g. report.md, data.csv, logo.svg, script.py'},type:{type:'string',enum:['text','markdown','html','csv','json','code','svg'],description:'text/markdown/html/csv/json for documents, code for source files, svg for a vector image/graphic'},content:{type:'string',description:'The complete file content'}},required:['filename','type','content']}},
+  {name:'create_file',description:'Create a real downloadable file for the user, shown in the chat with a preview and download buttons. Use this whenever the user wants something to keep or download: a document, report, letter, spreadsheet, code file, config, or a VECTOR graphic/icon/diagram/logo (write those as clean SVG markup). For photographic or painted/artistic raster images, use generate_image instead. Produce the full, final content — no placeholders. Do NOT also paste the whole file into your reply; a short sentence plus the file card is enough. For a PDF, use type "pdf" and write the content as markdown (headings, bullets, paragraphs) — it is rendered into a real downloadable PDF. Documents also offer PDF and Word download buttons automatically.',input_schema:{type:'object',properties:{filename:{type:'string',description:'File name with extension, e.g. report.md, data.csv, logo.svg, script.py, brief.pdf'},type:{type:'string',enum:['text','markdown','html','csv','json','code','svg','pdf'],description:'text/markdown/html/csv/json for documents, code for source files, svg for a vector image/graphic, pdf for a PDF document (write content as markdown)'},content:{type:'string',description:'The complete file content'}},required:['filename','type','content']}},
   {name:'generate_image',description:'Generate a real raster image (photo-style, illustration, artwork, product mockup, scene) from a text description using an image model. Use this for anything photographic or painterly that SVG cannot do. The image appears in the chat with a download button. For simple flat logos/icons/diagrams, prefer create_file with SVG.',input_schema:{type:'object',properties:{prompt:{type:'string',description:'Detailed description of the image to generate'},size:{type:'string',enum:['1024x1024','1024x1536','1536x1024'],description:'Image dimensions; default 1024x1024'}},required:['prompt']}}
 ];
 const TOOL_NOTE=`
@@ -1149,6 +1171,101 @@ function svgToPng(svg,name){
   img.onerror=()=>addMsg('⚠ Could not rasterize the SVG to PNG — download the SVG instead.','sys');
   img.src=url;
 }
+
+// ---- Client-side PDF generator (no libraries) ----
+// Renders markdown/text into a real, directly-downloadable A4 PDF.
+function pdfEscape(s){return String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x20-\x7e]/g,'?')}
+function wrapText(text,maxChars){
+  const words=String(text).split(/\s+/);const lines=[];let cur='';
+  for(const wd of words){
+    if(!cur){cur=wd}
+    else if((cur+' '+wd).length<=maxChars){cur+=' '+wd}
+    else{lines.push(cur);cur=wd}
+    while(cur.length>maxChars){lines.push(cur.slice(0,maxChars));cur=cur.slice(maxChars)}
+  }
+  if(cur)lines.push(cur);
+  return lines.length?lines:[''];
+}
+function mdToBlocks(md){
+  const out=[];
+  const lines=String(md).replace(/\r/g,'').split('\n');
+  let inCode=false;
+  for(let raw of lines){
+    if(/^```/.test(raw)){inCode=!inCode;continue}
+    if(inCode){out.push({k:'code',t:raw});continue}
+    let l=raw.replace(/`([^`]+)`/g,'$1').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1');
+    if(!l.trim()){out.push({k:'sp'});continue}
+    let m;
+    if(m=l.match(/^(#{1,6})\s+(.*)/)){out.push({k:'h',lvl:m[1].length,t:m[2]});continue}
+    if(/^\s*([-*+])\s+/.test(l)){out.push({k:'li',t:l.replace(/^\s*[-*+]\s+/,''),pre:'•  '});continue}
+    if(m=l.match(/^\s*(\d+)[.)]\s+(.*)/)){out.push({k:'li',t:m[2],pre:m[1]+'.  '});continue}
+    if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(l)){out.push({k:'hr'});continue}
+    out.push({k:'p',t:l.trim()});
+  }
+  return out;
+}
+function mdToPdfBlob(title,md){
+  const W=595.28,H=841.89,M=54,CW=W-2*M;
+  const styles={h1:{f:2,s:19,ld:26},h2:{f:2,s:15,ld:21},h3:{f:2,s:13,ld:18},p:{f:1,s:11,ld:16},li:{f:1,s:11,ld:16},code:{f:3,s:9.5,ld:13}};
+  const factor={1:0.5,2:0.54,3:0.6};
+  const pages=[];let cur=[];let y=H-M;
+  const nl=(ld)=>{y-=ld;if(y<M){pages.push(cur);cur=[];y=H-M-ld;y+=ld;y=H-M;y-=ld}};
+  const emit=(font,size,x,text)=>{cur.push('BT /F'+font+' '+size+' Tf '+x.toFixed(1)+' '+y.toFixed(1)+' Td ('+pdfEscape(text)+') Tj ET')};
+  function place(font,size,ld,x,text){
+    if(y-ld<M){pages.push(cur);cur=[];y=H-M}
+    y-=ld;emit(font,size,x,text);
+  }
+  const blocks=mdToBlocks(md);
+  if(title){const st=styles.h1;const mc=Math.floor(CW/(st.s*factor[st.f]));wrapText(title,mc).forEach(ln=>place(st.f,st.s,st.ld,M,ln));y-=6}
+  for(const b of blocks){
+    if(b.k==='sp'){y-=8;if(y<M){pages.push(cur);cur=[];y=H-M}continue}
+    if(b.k==='hr'){y-=4;cur.push(M.toFixed(1)+' '+y.toFixed(1)+' m '+(W-M).toFixed(1)+' '+y.toFixed(1)+' l 0.8 w 0.7 0.7 0.7 RG S 0 0 0 RG');y-=8;continue}
+    let st=b.k==='h'?(b.lvl<=1?styles.h1:b.lvl===2?styles.h2:styles.h3):styles[b.k]||styles.p;
+    const indent=b.k==='li'?M+16:(b.k==='code'?M+6:M);
+    const avail=CW-(indent-M);
+    const mc=Math.max(8,Math.floor(avail/(st.s*factor[st.f])));
+    if(b.k==='h'){y-=6}
+    if(b.k==='li'){
+      const wrapped=wrapText(b.t,mc-b.pre.length);
+      wrapped.forEach((ln,i)=>place(st.f,st.s,st.ld,indent,(i===0?b.pre:'   ')+ln));
+    }else if(b.k==='code'){
+      place(3,st.s,st.ld,indent,b.t.slice(0,110));
+    }else{
+      wrapText(b.t,mc).forEach(ln=>place(st.f,st.s,st.ld,indent,ln));
+    }
+  }
+  pages.push(cur);
+  // Assemble PDF objects
+  const objs=[];
+  const fontObjs={1:'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',2:'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',3:'<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>'};
+  // object numbering: 1 catalog, 2 pages, 3 F1,4 F2,5 F3, then per page: content + page
+  const nPages=pages.length;
+  const kids=[];let objNum=6;
+  const pageObjNums=[];const contentObjs=[];
+  for(let i=0;i<nPages;i++){
+    const content=pages[i].join('\n');
+    const contentNum=objNum++;const pageNum=objNum++;
+    contentObjs.push({num:contentNum,stream:content});
+    pageObjNums.push({num:pageNum,contentNum});
+    kids.push(pageNum+' 0 R');
+  }
+  const build=[];
+  build[1]='<< /Type /Catalog /Pages 2 0 R >>';
+  build[2]='<< /Type /Pages /Count '+nPages+' /Kids ['+kids.join(' ')+'] >>';
+  build[3]=fontObjs[1];build[4]=fontObjs[2];build[5]=fontObjs[3];
+  contentObjs.forEach(c=>{build[c.num]='<< /Length '+c.stream.length+' >>\nstream\n'+c.stream+'\nendstream'});
+  pageObjNums.forEach(p=>{build[p.num]='<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents '+p.contentNum+' 0 R >>'});
+  let pdf='%PDF-1.4\n';const offsets=[];
+  const total=build.length-1;
+  for(let i=1;i<=total;i++){offsets[i]=pdf.length;pdf+=i+' 0 obj\n'+build[i]+'\nendobj\n'}
+  const xref=pdf.length;
+  pdf+='xref\n0 '+(total+1)+'\n0000000000 65535 f \n';
+  for(let i=1;i<=total;i++){pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n'}
+  pdf+='trailer\n<< /Size '+(total+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+  const bytes=new Uint8Array(pdf.length);for(let i=0;i<pdf.length;i++)bytes[i]=pdf.charCodeAt(i)&0xff;
+  return new Blob([bytes],{type:'application/pdf'});
+}
+
 function dlArtifact(id,fmt){
   const a=artStore[id];if(!a)return;
   if(a.dataUrl){ // raster image (PNG data URL)
@@ -1157,10 +1274,15 @@ function dlArtifact(id,fmt){
     return dlBlob(a.name,'image/png',u);
   }
   if(fmt==='png'&&a.type==='svg')return svgToPng(a.content,a.name);
+  if(fmt==='pdf'){
+    const base=a.name.replace(/\.[^.]+$/,'');
+    return dlBlob(base+'.pdf','application/pdf',mdToPdfBlob('',a.content));
+  }
   if(fmt==='doc'){
     const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body>'+(a.type==='html'?a.content:'<pre style="font-family:Calibri,sans-serif;white-space:pre-wrap">'+esc(a.content)+'</pre>')+'</body></html>';
     return dlBlob(a.name.replace(/\.[^.]+$/,'')+'.doc','application/msword',html);
   }
+  if(a.type==='pdf')return dlBlob(a.name,'application/pdf',mdToPdfBlob('',a.content)); // native for a pdf artifact IS the pdf
   dlBlob(a.name,MIMES[a.type]||'text/plain',a.content);
 }
 function renderArtifact(name,type,content){
@@ -1179,10 +1301,12 @@ function renderArtifact(name,type,content){
     const snip=content.length>600?content.slice(0,600)+'\n…':content;
     preview=`<pre class="art-pre">${esc(snip)}</pre>`;
   }
-  const icon=isImg?'🖼️':(type==='csv'?'📊':type==='code'?'📜':type==='html'?'🌐':'📄');
-  let btns=`<button onclick="dlArtifact(${id},'native')">⬇ Download</button>`;
+  const icon=isImg?'🖼️':(type==='csv'?'📊':type==='code'?'📜':type==='html'?'🌐':type==='pdf'?'📕':'📄');
+  const docLike=type==='markdown'||type==='text'||type==='html'||type==='pdf';
+  let btns=`<button onclick="dlArtifact(${id},'native')">⬇ ${type==='pdf'?'Download PDF':'Download'}</button>`;
   if(isImg)btns+=`<button onclick="dlArtifact(${id},'png')">⬇ PNG</button>`;
-  if(type==='markdown'||type==='text'||type==='html')btns+=`<button onclick="dlArtifact(${id},'doc')">⬇ Word</button>`;
+  if(docLike&&type!=='pdf')btns+=`<button onclick="dlArtifact(${id},'pdf')">⬇ PDF</button>`;
+  if(docLike&&type!=='pdf')btns+=`<button onclick="dlArtifact(${id},'doc')">⬇ Word</button>`;
   w.innerHTML=`<div class="art-hd">${icon} <b>${esc(name)}</b> <span>${type} · ${size}</span></div>${preview}<div class="art-btns">${btns}</div>`;
   msgs.appendChild(w);
   msgs.scrollTop=msgs.scrollHeight;
@@ -1227,10 +1351,10 @@ async function generateImage(prompt,size){
 }
 function createFile(input){
   let name=String(input.filename||'file').replace(/[\/\\]/g,'_').slice(0,80)||'file';
-  const type=MIMES[input.type]?input.type:'text';
+  const type=(input.type==='pdf'||MIMES[input.type])?input.type:'text';
   const content=String(input.content||'');
   if(!content.trim())return 'Error: empty file content.';
-  const EXT={text:'txt',markdown:'md',html:'html',csv:'csv',json:'json',code:'txt',svg:'svg'};
+  const EXT={text:'txt',markdown:'md',html:'html',csv:'csv',json:'json',code:'txt',svg:'svg',pdf:'pdf'};
   if(!/\.[a-z0-9]{1,5}$/i.test(name))name+='.'+EXT[type];
   renderArtifact(name,type,content);
   return 'Created file "'+name+'" ('+type+', '+content.length+' chars). It is shown to the user with download buttons — do not paste the full content again.';
