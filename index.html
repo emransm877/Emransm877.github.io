@@ -35,7 +35,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 
 /* BOTTOM NAV */
 .bnav{
-  position:fixed;bottom:0;left:0;right:0;z-index:100;
+  position:fixed;bottom:0;left:0;right:0;z-index:300;
   display:flex;
   background:rgba(5,10,20,.97);
   border-top:1px solid rgba(0,240,255,.15);
@@ -106,7 +106,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 
 /* CHAT PANEL - FULL SCREEN OVERLAY */
 .chat-panel{
-  position:fixed;inset:0;z-index:200;
+  position:fixed;top:0;left:0;right:0;bottom:calc(52px + env(safe-area-inset-bottom));z-index:200;
   background:#00000a;
   display:flex;flex-direction:column;
   transform:translateX(100%);
@@ -130,7 +130,23 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
   transition:all .3s;
 }
 .chat-orb.on{background:rgba(0,240,255,.12);border-color:#00f0ff;box-shadow:0 0 14px rgba(0,240,255,.25)}
-.chat-info{flex:1;min-width:0}
+.chat-info{flex:1;min-width:0;cursor:pointer}
+.chat-orb{cursor:pointer}
+
+/* AGENT PICKER */
+.picker{position:absolute;inset:0;z-index:300;background:#02060e;display:flex;flex-direction:column;transform:translateY(-8px);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+.picker.open{opacity:1;transform:none;pointer-events:auto}
+.picker-hd{display:flex;gap:8px;padding:14px;padding-top:max(14px,env(safe-area-inset-top));border-bottom:1px solid rgba(0,240,255,.12)}
+.picker-hd input{flex:1;background:#0a1222;border:1px solid rgba(0,240,255,.2);border-radius:9px;color:#e8f2ff;font-family:'Space Grotesk',sans-serif;font-size:.9rem;padding:11px 13px;outline:none}
+.picker-hd input:focus{border-color:#00f0ff}
+.picker-x{background:none;border:1px solid #182435;border-radius:9px;color:#7ee7ff;cursor:pointer;font-size:1rem;width:42px;flex-shrink:0}
+.picker-list{flex:1;overflow-y:auto;padding:8px;-webkit-overflow-scrolling:touch}
+.pitem{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:10px;cursor:pointer;font-size:.84rem;border:1px solid transparent;-webkit-tap-highlight-color:transparent}
+.pitem:active{background:rgba(0,240,255,.06)}
+.pitem b{font-weight:600;color:#e8f2ff}
+.pitem span{margin-left:auto;font-family:'Space Mono',monospace;font-size:.56rem;color:#2a3f5a;text-transform:uppercase;letter-spacing:.05em}
+.pitem.auto{background:rgba(0,240,255,.08);border-color:rgba(0,240,255,.25);margin-bottom:6px}
+.pitem.sel{border-color:#00f0ff}
 .chat-name{font-size:.88rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-sub{font-family:'Space Mono',monospace;font-size:.56rem;color:#2a3f5a;margin-top:1px;transition:color .3s}
 .chat-sub.on{color:#00f0ff}
@@ -255,33 +271,27 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 
 <!-- BOTTOM NAV -->
 <nav class="bnav">
-  <button class="bnav-btn on" id="bn-agents" onclick="goAgents()">
-    <div class="bnav-ico">🤖</div>Agents
+  <button class="bnav-btn" id="bn-agents" onclick="goAgents()">
+    <div class="bnav-ico">🗂️</div>Browse
   </button>
-  <button class="bnav-btn" id="bn-chat" onclick="goChat()">
-    <div class="bnav-ico">🧠</div>Chat
+  <button class="bnav-btn on" id="bn-chat" onclick="goChat()">
+    <div class="bnav-ico">💬</div>Chat
   </button>
 </nav>
 
 <!-- CHAT PANEL - slides in from right -->
 <div class="chat-panel" id="chatPanel">
   <div class="chat-hd">
-    <button class="chat-back" onclick="goAgents()">←</button>
-    <div class="chat-orb" id="chatOrb">🧠</div>
-    <div class="chat-info">
-      <div class="chat-name" id="chatName">Agency Intelligence</div>
-      <div class="chat-sub" id="chatSub">231 agents · tap a card to activate</div>
+    <div class="chat-orb" id="chatOrb" onclick="openPicker()">🧭</div>
+    <div class="chat-info" onclick="openPicker()">
+      <div class="chat-name" id="chatName">Auto ▾</div>
+      <div class="chat-sub" id="chatSub">smart routing · tap to choose</div>
     </div>
     <button class="chat-rbtn on" id="toolsBtn" onclick="toggleTools()">🔧 TOOLS</button>
     <button class="chat-rbtn" onclick="clearChat()">🗑 CLEAR</button>
-    <button class="chat-rbtn" onclick="resetAgent()">↺ RESET</button>
+    <button class="chat-rbtn" onclick="resetAgent()">🧭 AUTO</button>
   </div>
-  <div class="msgs" id="msgs">
-    <div class="msg ai">
-      <div class="mwho">Agency Intelligence</div>
-      <div class="mb"><strong>Welcome to Agency HQ.</strong><br><br>Go back, tap any agent card — I instantly become that specialist and work with you here.<br><br>Or just ask me anything.</div>
-    </div>
-  </div>
+  <div class="msgs" id="msgs"></div>
   <div class="chat-foot">
     <div class="pfiles" id="pfiles" style="display:none"></div>
     <div class="qps" id="qps">
@@ -296,6 +306,15 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
       <button class="sbtn" id="sendBtn" onclick="sendOrStop()">↑</button>
     </div>
     <input type="file" id="fileInput" multiple style="display:none" accept="image/*,.pdf,.apk,.aab,.apks,.xapk,.txt,.md,.markdown,.csv,.tsv,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml,.toml,.ini,.log,.sql,.sh">
+  </div>
+
+  <!-- AGENT PICKER (dropdown) -->
+  <div class="picker" id="picker">
+    <div class="picker-hd">
+      <input id="pickerSearch" placeholder="Search 231 specialists…" autocomplete="off">
+      <button class="picker-x" onclick="closePicker()">✕</button>
+    </div>
+    <div class="picker-list" id="pickerList"></div>
   </div>
 </div>
 
@@ -335,9 +354,10 @@ HOW YOU TALK — these rules override everything above:
 - For a big vague task: confirm scope in one line and ask the 1-2 questions you truly need, or just make a smart call and go.
 - If they attach a file or image, actually read it and respond to its specific contents.`;
 
-function buildSystem(){
-  if(activeAgent){
-    const a=activeAgent;
+function buildSystem(agent){
+  agent=(agent!==undefined)?agent:activeAgent;
+  if(agent){
+    const a=agent;
     return `You ARE ${a.name} — a specialist working live with the user.
 NAME: ${a.name} | DIVISION: ${a.div}
 DESCRIPTION: ${a.desc}
@@ -352,8 +372,65 @@ Stay completely in character as ${a.name} at all times.`+CONVO_RULES+(toolsEnabl
 
 function introPrompt(a){return `(The user just opened a chat with you. Greet them as ${a.name} in 1-2 short, personable sentences — who you are in plain words, plus one casual question about what they're working on. No lists, no headers, no formality.)`}
 
-// MEMORY — every chat is saved per-agent and survives refresh
-function memKey(){return 'agencyMem2_'+(activeAgent?activeAgent.name:'HQ')}
+// ROUTER — in Auto mode, pick the best specialist for each request
+let AGENT_INDEX='';
+function buildIndex(){AGENT_INDEX=AGENTS.map((a,i)=>i+'|'+a.name+'|'+a.div+'|'+(a.desc||'').replace(/\s+/g,' ').slice(0,64)).join('\n')}
+async function routeAgent(userMsg){
+  const sys='You are the router for Agency HQ. Read the user message and pick the single best specialist to handle it from the list. Reply with ONLY compact JSON, no prose: {"i":<index or -1>,"why":"<max 6 words>"}. Use i=-1 only if none fit and a generalist is better.';
+  const prompt='Specialists (index|name|division|description):\n'+AGENT_INDEX+'\n\nUser message: "'+String(userMsg).slice(0,500)+'"\n\nBest specialist as JSON:';
+  try{
+    const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,max_tokens:60,system:sys,messages:[{role:'user',content:prompt}]}),signal:aborter&&aborter.signal});
+    if(!res.ok)return {agent:null,why:''};
+    const data=await res.json();
+    const txt=(data.content&&data.content[0]&&data.content[0].text)||'';
+    const m=txt.match(/\{[\s\S]*?\}/);
+    if(m){const o=JSON.parse(m[0]);const i=parseInt(o.i,10);return {agent:(i>=0&&AGENTS[i])?AGENTS[i]:null,why:(o.why||'').slice(0,60)}}
+  }catch(e){}
+  return {agent:null,why:''};
+}
+
+// AGENT PICKER (dropdown)
+function openPicker(){
+  const p=document.getElementById('picker');
+  p.classList.add('open');
+  document.getElementById('pickerSearch').value='';
+  renderPicker('');
+  pushBack();
+  setTimeout(()=>document.getElementById('pickerSearch').focus(),60);
+}
+function closePicker(){document.getElementById('picker').classList.remove('open')}
+function renderPicker(q){
+  q=(q||'').toLowerCase().trim();
+  const items=AGENTS.map((a,i)=>[a,i]).filter(([a])=>!q||[a.name,a.desc,a.div,a.vibe].filter(Boolean).some(s=>s.toLowerCase().includes(q)));
+  let html=q?'':`<div class="pitem auto${activeAgent?'':' sel'}" onclick="pickAgent(-1)">🧭 <b>Auto</b> — smart routing<span>recommended</span></div>`;
+  html+=items.slice(0,140).map(([a,i])=>`<div class="pitem${activeAgent&&activeAgent.name===a.name?' sel':''}" onclick="pickAgent(${i})">${a.emoji||'🤖'} <b>${esc(a.name)}</b><span>${esc(a.div)}</span></div>`).join('');
+  if(!items.length)html='<div class="pitem"><b>No specialist matches.</b></div>';
+  document.getElementById('pickerList').innerHTML=html;
+}
+function pickAgent(i){
+  activeAgent=(i<0)?null:AGENTS[i];
+  updateChatHeader();
+  closePicker();
+  goChat();
+  addMsg(activeAgent?('📌 Pinned '+(activeAgent.emoji||'🤖')+' '+activeAgent.name+' — answers everything until you switch back to Auto.'):'🧭 Auto mode on — I\'ll route each request to the best specialist.','sys');
+}
+function updateChatHeader(){
+  const orb=document.getElementById('chatOrb'),name=document.getElementById('chatName'),sub=document.getElementById('chatSub');
+  if(activeAgent){
+    orb.textContent=activeAgent.emoji||'🤖';orb.classList.add('on');
+    name.textContent=activeAgent.name+' ▾';
+    sub.textContent=activeAgent.div+' · pinned';sub.classList.add('on');
+    setQPs(activeAgent);
+  }else{
+    orb.textContent='🧭';orb.classList.remove('on');
+    name.textContent='Auto ▾';
+    sub.textContent='smart routing · tap to choose';sub.classList.remove('on');
+    document.getElementById('qps').innerHTML=DEFAULT_QPS.map(([l,p])=>`<div class="qp" onclick="sq('${p.replace(/'/g,"\\'")}')"> ${l}</div>`).join('');
+  }
+}
+
+// MEMORY — one continuous chat thread, saved and survives refresh
+function memKey(){return 'agencyMain'}
 function loadMem(){
   try{const h=JSON.parse(localStorage.getItem(memKey()));return Array.isArray(h)?h:[]}catch(e){return[]}
 }
@@ -782,11 +859,18 @@ function init(){
   renderGrid();
   setupInput();
   updateToolsBtn();
+  buildIndex();
+  updateChatHeader();
 
-  // Restore HQ conversation from memory
+  // Restore the single conversation thread from memory
   history=loadMem();
   trimHistory();
-  if(history.some(m=>!m.hidden))renderHistory();
+  const shown=renderHistory();
+  if(!shown)addWelcome();
+
+  // Chat is the home screen
+  goChat();
+  pushBack(); // baseline so the first back gesture is caught in-app
 }
 
 function filtered(){
@@ -826,44 +910,15 @@ function renderGrid(){
 }
 
 document.getElementById('searchInput').addEventListener('input',e=>{searchQ=e.target.value;renderGrid()});
+document.getElementById('pickerSearch').addEventListener('input',e=>renderPicker(e.target.value));
 
-// TAP CARD - activate agent then open chat
+// TAP CARD (Browse tab) — pin this specialist, stay in the one thread
 function tapCard(idx){
-  const agent=AGENTS[idx];
-  activeAgent=agent;
-  history=loadMem();
-  trimHistory();
-
-  // Highlight card
-  document.querySelectorAll('.card').forEach(c=>c.classList.remove('on'));
-  const items=filtered();
-  const pos=items.indexOf(agent);
-  if(pos>=0){
-    const cards=document.querySelectorAll('.card');
-    if(cards[pos])cards[pos].classList.add('on');
-  }
-
-  // Update chat header
-  document.getElementById('chatOrb').textContent=agent.emoji||'🤖';
-  document.getElementById('chatOrb').classList.add('on');
-  document.getElementById('chatName').textContent=agent.name;
-  document.getElementById('chatSub').textContent=agent.div+' · ACTIVE';
-  document.getElementById('chatSub').classList.add('on');
-
-  // Set quick prompts
-  setQPs(agent);
-
-  // Open chat
+  activeAgent=AGENTS[idx];
+  document.querySelectorAll('.card.on').forEach(c=>c.classList.remove('on'));
+  updateChatHeader();
   goChat();
-
-  // Rebuild this agent's conversation from memory
-  const shown=renderHistory();
-  if(shown){
-    addMsg('⚡ '+agent.name+' back online — remembers your conversation','sys');
-  }else{
-    addMsg('⚡ '+agent.name+' — '+agent.div+' activated','sys');
-    callAPI(introPrompt(agent),true);
-  }
+  addMsg('📌 Pinned '+(activeAgent.emoji||'🤖')+' '+activeAgent.name+' — answers everything until you switch back to Auto.','sys');
 }
 
 function setQPs(agent){
@@ -883,25 +938,16 @@ function setQPs(agent){
 
 function resetAgent(){
   activeAgent=null;
-  history=loadMem();
-  trimHistory();
-  document.getElementById('chatOrb').textContent='🧠';
-  document.getElementById('chatOrb').classList.remove('on');
-  document.getElementById('chatName').textContent='Agency Intelligence';
-  document.getElementById('chatSub').textContent='231 agents · tap a card to activate';
-  document.getElementById('chatSub').classList.remove('on');
-  document.getElementById('qps').innerHTML=DEFAULT_QPS.map(([l,p])=>`<div class="qp" onclick="sq('${p.replace(/'/g,"\'")}')"> ${l}</div>`).join('');
   document.querySelectorAll('.card.on').forEach(c=>c.classList.remove('on'));
-  renderHistory();
-  addMsg('↺ Reset — all 231 agents ready.','sys');
+  updateChatHeader();
+  addMsg('🧭 Auto mode on — I\'ll route each request to the best specialist.','sys');
 }
 
 function clearChat(){
   clearMem();
   history=[];
   renderHistory();
-  addMsg('🗑 Memory wiped for this chat.','sys');
-  if(activeAgent)callAPI(introPrompt(activeAgent),true);
+  addMsg('🗑 Conversation wiped — fresh start.','sys');
 }
 
 // NAV
@@ -914,7 +960,19 @@ function goAgents(){
   document.getElementById('chatPanel').classList.remove('open');
   document.getElementById('bn-agents').classList.add('on');
   document.getElementById('bn-chat').classList.remove('on');
+  pushBack();
 }
+
+// PHONE BACK GESTURE / BUTTON — Android back + iOS edge-swipe close overlays
+// instead of leaving the app (via the History API).
+function pushBack(){try{window.history.pushState({agency:true},'')}catch(e){}}
+window.addEventListener('popstate',()=>{
+  const pickerOpen=document.getElementById('picker').classList.contains('open');
+  const browseOpen=!document.getElementById('chatPanel').classList.contains('open');
+  if(document.getElementById('picker') && pickerOpen){closePicker();pushBack();return}
+  if(browseOpen){goChat();pushBack();return}
+  // Already on the chat home screen — let one more back leave the app.
+});
 
 // MESSAGES
 const ACTS='<div class="macts"><button onclick="copyMsg(this)">⧉ copy</button><button onclick="dlMsg(this)">⬇ save</button></div>';
@@ -950,7 +1008,7 @@ function addUserMsg(ui){
 }
 
 function addWelcome(){
-  addMsg("**Welcome to Agency HQ.**\n\nGo back, tap any agent card — I instantly become that specialist and work with you here.\n\nOr just ask me anything.",'ai','Agency Intelligence',true);
+  addMsg("**Welcome to Agency HQ.**\n\nJust tell me what you need — I'll route you to the right specialist out of 231 and they'll take it from there. I can run code, search the web, read links and files too.\n\nWant to pick a specialist yourself? Tap the title up top, or hit **Browse**.",'ai','Agency Intelligence',true);
 }
 
 function renderHistory(){
@@ -1102,8 +1160,21 @@ async function callAPI(userMsg,isIntro=false,files=[]){
   aborter=new AbortController();
   setSendMode(true);
 
-  const who=activeAgent?activeAgent.name:'Agency Intelligence';
-  const system=buildSystem();
+  // Auto mode: route this request to the best specialist first
+  let agent=activeAgent;
+  if(!isIntro&&!activeAgent){
+    const msgsEl=document.getElementById('msgs');
+    const th=document.createElement('div');
+    th.className='thinking';
+    th.innerHTML=`<span class="dots"><span></span><span></span><span></span></span> finding the right specialist…`;
+    msgsEl.appendChild(th);msgsEl.scrollTop=msgsEl.scrollHeight;
+    const r=await routeAgent(userMsg);
+    th.remove();
+    agent=r.agent;
+    toolMsg('🧭',agent?('Routed to '+(agent.emoji||'🤖')+' '+agent.name+(r.why?' — '+r.why:'')):'Handling this directly');
+  }
+  const who=agent?agent.name:'Agency Intelligence';
+  const system=buildSystem(agent);
 
   let content;
   if(files.length){
@@ -1141,17 +1212,19 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     el.dataset.raw=txt;
     msgs.scrollTop=msgs.scrollHeight;
   };
-  const useTools=toolsEnabled&&!isIntro;
+  let toolsThisTurn=toolsEnabled&&!isIntro;
 
   try{
     let guard=0;
     while(true){
       if(++guard>8)throw new Error('too many tool steps — stopping to avoid a loop');
       const payload={model:MODEL,max_tokens:4096,system,messages};
-      if(useTools)payload.tools=TOOLS;
+      if(toolsThisTurn)payload.tools=TOOLS;
       const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
       if(!res.ok){
         const tx=await res.text().catch(()=>'');
+        // If the proxy can't handle the tools field, fall back to plain chat instead of breaking
+        if(toolsThisTurn){toolsThisTurn=false;toolMsg('⚠','tools not supported by this proxy — answering without them');continue;}
         throw new Error('proxy HTTP '+res.status+(tx?': '+tx.slice(0,120):''));
       }
       const data=await res.json();

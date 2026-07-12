@@ -1,0 +1,8 @@
+{
+  "name": "agency-proxy",
+  "version": "1.0.0",
+  "description": "Forwards Agency HQ chat requests to the Anthropic API (with tools + streaming).",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
