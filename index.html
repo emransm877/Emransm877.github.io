@@ -51,6 +51,34 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 .hsearch input::placeholder{color:var(--faint)}
 .sico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:.9rem}
 
+/* CONVERSATION SIDEBAR */
+.menu-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.25rem;padding:2px 8px 2px 0;flex-shrink:0;-webkit-tap-highlight-color:transparent;line-height:1}
+.sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:280px;z-index:400;
+  background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:12px;gap:10px;
+  transform:translateX(-100%);transition:transform .25s cubic-bezier(.23,1,.32,1);
+  padding-top:max(12px,env(safe-area-inset-top));
+}
+.sidebar.open{transform:translateX(0)}
+.sb-scrim{position:fixed;inset:0;z-index:390;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .2s}
+.sb-scrim.on{opacity:1;pointer-events:auto}
+.sb-new{display:flex;align-items:center;justify-content:center;background:var(--accent);border:none;border-radius:11px;color:#fff;cursor:pointer;font-family:var(--sans);font-size:.86rem;font-weight:600;padding:11px;-webkit-tap-highlight-color:transparent;transition:background .15s}
+.sb-new:hover{background:var(--accent-hover)}
+.sb-search{position:relative}
+.sb-search input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:.82rem;padding:8px 10px 8px 28px;outline:none}
+.sb-search input:focus{border-color:var(--accent)}
+.sb-sico{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:.82rem}
+.sb-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;-webkit-overflow-scrolling:touch}
+.sb-item{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:9px;cursor:pointer;color:var(--muted);font-size:.83rem;-webkit-tap-highlight-color:transparent}
+.sb-item:hover{background:var(--surface-2)}
+.sb-item.on{background:var(--accent-soft);color:var(--text)}
+.sb-title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:.75rem;opacity:0;flex-shrink:0;padding:2px 4px;transition:opacity .15s}
+.sb-item:hover .sb-del{opacity:1}
+.sb-del:hover{color:var(--accent)}
+.sb-empty{color:var(--faint);font-size:.8rem;text-align:center;padding:24px 8px}
+
 /* BOTTOM NAV */
 .bnav{
   position:fixed;bottom:0;left:0;right:0;z-index:300;display:flex;
@@ -238,6 +266,12 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 /* ===== DESKTOP: centered app, no full-bleed stretch ===== */
 @media(min-width:900px){
   html,body{font-size:16.5px}
+  /* persistent conversation sidebar; content shifts right */
+  .sidebar{transform:none}
+  .sb-scrim{display:none}
+  .menu-btn{display:none}
+  .hd,.fpills,.chat-panel,.bnav{left:280px}
+  .main{left:280px}
   /* full-width bars, but their CONTENT is centered to a comfortable column */
   .hd,.fpills{padding-left:max(28px,calc((100% - 1160px)/2));padding-right:max(28px,calc((100% - 1160px)/2))}
   .main{padding:28px max(28px,calc((100% - 1160px)/2))}
@@ -271,8 +305,20 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 </head>
 <body>
 
+<!-- CONVERSATION SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <button class="sb-new" onclick="newConvo()">✎&nbsp; New chat</button>
+  <div class="sb-search">
+    <span class="sb-sico">⌕</span>
+    <input type="text" id="convoSearch" placeholder="Search chats…" autocomplete="off">
+  </div>
+  <div class="sb-list" id="convoList"></div>
+</aside>
+<div class="sb-scrim" id="sbScrim" onclick="closeSidebar()"></div>
+
 <!-- HEADER -->
 <header class="hd">
+  <button class="menu-btn" onclick="toggleSidebar()" title="Conversations">☰</button>
   <div class="logo">🎭 AGENCY HQ</div>
   <div class="hsearch">
     <span class="sico">⌕</span>
@@ -304,6 +350,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 <!-- CHAT PANEL - slides in from right -->
 <div class="chat-panel" id="chatPanel">
   <div class="chat-hd">
+    <button class="menu-btn" onclick="toggleSidebar()" title="Conversations">☰</button>
     <div class="chat-orb" id="chatOrb" onclick="openPicker()">🧭</div>
     <div class="chat-info" onclick="openPicker()">
       <div class="chat-name" id="chatName">Auto ▾</div>
@@ -452,30 +499,90 @@ function updateChatHeader(){
   }
 }
 
-// MEMORY — one continuous chat thread, saved and survives refresh
-function memKey(){return 'agencyMain'}
-function loadMem(){
-  try{const h=JSON.parse(localStorage.getItem(memKey()));return Array.isArray(h)?h:[]}catch(e){return[]}
+// MEMORY — multiple conversations, each saved; a sidebar lists them (like Claude)
+let activeConvoId=null;
+function convoKey(id){return 'agencyConvo_'+id}
+function newId(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function loadConvoList(){try{const l=JSON.parse(localStorage.getItem('agencyConvoList'));return Array.isArray(l)?l:[]}catch(e){return[]}}
+function saveConvoList(l){try{localStorage.setItem('agencyConvoList',JSON.stringify(l))}catch(e){}}
+function loadConvoMsgs(id){try{const h=JSON.parse(localStorage.getItem(convoKey(id)));return Array.isArray(h)?h:[]}catch(e){return[]}}
+function convoTitle(){
+  const u=history.find(m=>m.role==='user'&&!m.hidden&&m.ui&&m.ui.text);
+  return u?u.ui.text.slice(0,44):'New chat';
 }
-function clearMem(){try{localStorage.removeItem(memKey())}catch(e){}}
+function loadMem(){return activeConvoId?loadConvoMsgs(activeConvoId):[]}
+function slimHistory(){
+  return history.slice(-60).map(m=>{
+    if(!Array.isArray(m.content))return m;
+    // strip heavy base64 file data before persisting — keeps localStorage small
+    return {
+      role:m.role,hidden:m.hidden,
+      content:m.content.map(b=>(b.type==='image'||b.type==='document')?{type:'text',text:'[the user attached a file here earlier in the conversation]'}:b),
+      ui:m.ui?{text:m.ui.text,files:(m.ui.files||[]).map(f=>({name:f.name}))}:null
+    };
+  });
+}
 function saveMem(){
-  try{
-    const slim=history.slice(-60).map(m=>{
-      if(!Array.isArray(m.content))return m;
-      // strip heavy base64 file data before persisting — keeps localStorage small
-      return {
-        role:m.role,hidden:m.hidden,
-        content:m.content.map(b=>(b.type==='image'||b.type==='document')?{type:'text',text:'[the user attached a file here earlier in the conversation]'}:b),
-        ui:m.ui?{text:m.ui.text,files:(m.ui.files||[]).map(f=>({name:f.name}))}:null
-      };
-    });
-    localStorage.setItem(memKey(),JSON.stringify(slim));
-  }catch(e){}
+  if(!activeConvoId)activeConvoId=newId();
+  try{localStorage.setItem(convoKey(activeConvoId),JSON.stringify(slimHistory()))}catch(e){}
+  // update the sidebar index: title + recency, current chat to the top
+  let list=loadConvoList().filter(c=>c.id!==activeConvoId);
+  list.unshift({id:activeConvoId,title:convoTitle(),ts:Date.now(),agent:activeAgent?activeAgent.name:null});
+  saveConvoList(list);
+  try{localStorage.setItem('agencyActiveConvo',activeConvoId)}catch(e){}
+  renderSidebar();
 }
+function clearMem(){if(activeConvoId){try{localStorage.removeItem(convoKey(activeConvoId))}catch(e){}}}
 function trimHistory(){
   if(history.length>60)history=history.slice(-60);
   while(history.length&&history[0].role!=='user')history.shift();
 }
+
+function newConvo(){
+  activeConvoId=newId();
+  history=[];
+  activeAgent=null;
+  updateChatHeader();
+  renderHistory();
+  try{localStorage.setItem('agencyActiveConvo',activeConvoId)}catch(e){}
+  renderSidebar();
+  goChat();closeSidebar();
+  document.getElementById('ainput').focus();
+}
+function openConvo(id){
+  activeConvoId=id;
+  const entry=loadConvoList().find(c=>c.id===id);
+  activeAgent=(entry&&entry.agent)?(AGENTS.find(a=>a.name===entry.agent)||null):null;
+  history=loadConvoMsgs(id);
+  trimHistory();
+  try{localStorage.setItem('agencyActiveConvo',id)}catch(e){}
+  updateChatHeader();
+  renderHistory();
+  renderSidebar();
+  goChat();closeSidebar();
+}
+function deleteConvo(id,ev){
+  if(ev)ev.stopPropagation();
+  try{localStorage.removeItem(convoKey(id))}catch(e){}
+  saveConvoList(loadConvoList().filter(c=>c.id!==id));
+  if(id===activeConvoId){
+    const list=loadConvoList();
+    if(list.length)openConvo(list[0].id);else newConvo();
+  }else renderSidebar();
+}
+let convoSearchQ='';
+function renderSidebar(){
+  const box=document.getElementById('convoList');
+  if(!box)return;
+  const q=convoSearchQ.toLowerCase().trim();
+  let list=loadConvoList();
+  if(q)list=list.filter(c=>(c.title||'').toLowerCase().includes(q));
+  if(!list.length){box.innerHTML='<div class="sb-empty">'+(q?'No matches.':'No conversations yet.')+'</div>';return}
+  box.innerHTML=list.map(c=>`<div class="sb-item${c.id===activeConvoId?' on':''}" onclick="openConvo('${c.id}')"><span class="sb-title">${esc(c.title||'New chat')}</span><button class="sb-del" title="Delete" onclick="deleteConvo('${c.id}',event)">✕</button></div>`).join('');
+}
+function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sbScrim').classList.add('on');renderSidebar()}
+function closeSidebar(){const s=document.getElementById('sidebar');if(s)s.classList.remove('open');const sc=document.getElementById('sbScrim');if(sc)sc.classList.remove('on')}
+function toggleSidebar(){const s=document.getElementById('sidebar');if(s&&s.classList.contains('open'))closeSidebar();else openSidebar()}
 
 // MARKDOWN — lightweight renderer (escapes HTML first, so it's safe)
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
@@ -883,13 +990,28 @@ function init(){
   setupInput();
   updateToolsBtn();
   buildIndex();
-  updateChatHeader();
 
-  // Restore the single conversation thread from memory
-  // (renderHistory shows the welcome itself when the thread is empty)
-  history=loadMem();
-  trimHistory();
+  // Conversations: migrate the old single thread, then open the most recent
+  let list=loadConvoList();
+  const legacy=loadConvoMsgs.length&&(function(){try{return JSON.parse(localStorage.getItem('agencyMain'))}catch(e){return null}})();
+  if(!list.length&&Array.isArray(legacy)&&legacy.length){
+    const id=newId();
+    try{localStorage.setItem(convoKey(id),JSON.stringify(legacy));localStorage.removeItem('agencyMain')}catch(e){}
+    list=[{id,title:'Previous chat',ts:Date.now(),agent:null}];
+    saveConvoList(list);
+  }
+  let start=null;
+  try{start=localStorage.getItem('agencyActiveConvo')}catch(e){}
+  if(list.length){
+    activeConvoId=(start&&list.some(c=>c.id===start))?start:list[0].id;
+    history=loadConvoMsgs(activeConvoId);
+    trimHistory();
+  }else{
+    activeConvoId=newId();history=[];
+  }
+  updateChatHeader();
   renderHistory();
+  renderSidebar();
 
   // Chat is the home screen
   goChat();
@@ -934,6 +1056,7 @@ function renderGrid(){
 
 document.getElementById('searchInput').addEventListener('input',e=>{searchQ=e.target.value;renderGrid()});
 document.getElementById('pickerSearch').addEventListener('input',e=>renderPicker(e.target.value));
+document.getElementById('convoSearch').addEventListener('input',e=>{convoSearchQ=e.target.value;renderSidebar()});
 
 // TAP CARD (Browse tab) — pin this specialist, stay in the one thread
 function tapCard(idx){
@@ -969,7 +1092,9 @@ function resetAgent(){
 function clearChat(){
   clearMem();
   history=[];
+  saveConvoList(loadConvoList().filter(c=>c.id!==activeConvoId));
   renderHistory();
+  renderSidebar();
   addMsg('🗑 Conversation wiped — fresh start.','sys');
 }
 
