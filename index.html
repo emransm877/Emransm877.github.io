@@ -204,6 +204,18 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 .tool .tlabel{display:flex;align-items:center;gap:7px;letter-spacing:.04em}
 .tool pre{margin-top:6px;padding:7px;background:#050a14;border-radius:6px;color:#8fb8d8;font-size:.6rem;line-height:1.5;overflow-x:auto;max-height:140px;white-space:pre-wrap;word-break:break-word}
 
+/* ARTIFACT (downloadable file) */
+.artifact{align-self:flex-start;max-width:92%;background:#081020;border:1px solid rgba(0,240,255,.2);border-radius:12px;padding:11px;overflow:hidden}
+.art-hd{display:flex;align-items:center;gap:7px;font-size:.8rem;margin-bottom:8px}
+.art-hd b{font-weight:600;color:#e8f2ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.art-hd span{margin-left:auto;font-family:'Space Mono',monospace;font-size:.55rem;color:#2a3f5a;text-transform:uppercase;flex-shrink:0}
+.art-pre{background:#050a14;border-radius:7px;padding:9px;font-family:'Space Mono',monospace;font-size:.62rem;line-height:1.5;color:#8fb8d8;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.art-img{background:#fff;border-radius:7px;padding:8px;text-align:center}
+.art-img img{max-width:100%;max-height:240px}
+.art-btns{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.art-btns button{background:rgba(0,240,255,.1);border:1px solid rgba(0,240,255,.3);border-radius:7px;color:#00f0ff;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:.7rem;font-weight:600;padding:6px 12px;-webkit-tap-highlight-color:transparent}
+.art-btns button:active{background:rgba(0,240,255,.2)}
+
 /* MESSAGE ACTIONS */
 .macts{display:flex;gap:10px;margin-top:4px;padding-left:4px}
 .macts button{background:none;border:none;color:#2a3f5a;cursor:pointer;font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.05em;padding:2px 0;-webkit-tap-highlight-color:transparent}
@@ -863,10 +875,10 @@ function init(){
   updateChatHeader();
 
   // Restore the single conversation thread from memory
+  // (renderHistory shows the welcome itself when the thread is empty)
   history=loadMem();
   trimHistory();
-  const shown=renderHistory();
-  if(!shown)addWelcome();
+  renderHistory();
 
   // Chat is the home screen
   goChat();
@@ -1076,14 +1088,16 @@ try{toolsEnabled=localStorage.getItem('agencyTools')!=='0'}catch(e){}
 const TOOLS=[
   {name:'run_javascript',description:'Execute JavaScript in a sandbox and get the result. Use this for ANY real calculation, math, data processing, parsing/transforming text, working with the contents of attached files, generating structured data, or verifying logic — never do arithmetic in your head, run it. The last expression or an explicit return value is captured, and console.log output is returned. No DOM or network access.',input_schema:{type:'object',properties:{code:{type:'string',description:'JavaScript source to execute'}},required:['code']}},
   {name:'web_search',description:'Search the live web. Returns result titles, URLs and snippets. Use whenever the user asks about current events, recent facts, prices, people, products, or anything you are not certain about or that may have changed since your training.',input_schema:{type:'object',properties:{query:{type:'string',description:'The search query'}},required:['query']}},
-  {name:'fetch_url',description:'Fetch a web page or API endpoint and return its readable text content. Use to actually read an article, docs page, or link the user gives you, or a promising result from web_search.',input_schema:{type:'object',properties:{url:{type:'string',description:'Full http(s) URL to read'}},required:['url']}}
+  {name:'fetch_url',description:'Fetch a web page or API endpoint and return its readable text content. Use to actually read an article, docs page, or link the user gives you, or a promising result from web_search.',input_schema:{type:'object',properties:{url:{type:'string',description:'Full http(s) URL to read'}},required:['url']}},
+  {name:'create_file',description:'Create a real downloadable file for the user, shown in the chat with a preview and download buttons. Use this whenever the user wants something to keep or download: a document, report, letter, spreadsheet, code file, config, or an IMAGE/graphic/icon/diagram/logo (write images as clean SVG markup). Produce the full, final content — no placeholders. Do NOT also paste the whole file into your reply; a short sentence plus the file card is enough.',input_schema:{type:'object',properties:{filename:{type:'string',description:'File name with extension, e.g. report.md, data.csv, logo.svg, script.py'},type:{type:'string',enum:['text','markdown','html','csv','json','code','svg'],description:'text/markdown/html/csv/json for documents, code for source files, svg for an image/graphic'},content:{type:'string',description:'The complete file content'}},required:['filename','type','content']}}
 ];
 const TOOL_NOTE=`
 
 YOU HAVE REAL TOOLS — use them proactively, don't just describe what you'd do:
 - run_javascript: actually run code for any calculation, data work, or to verify something. Don't guess numbers — compute them.
 - web_search + fetch_url: actually look things up on the live web when the answer depends on current or uncertain facts. Search, then fetch the best link to read it.
-Call a tool whenever it would make your answer more correct or concrete, then explain the result naturally. Never claim you "can't browse or run code" — you can.`;
+- create_file: when the user wants something to keep or download — a document, report, spreadsheet, code file, or an image/graphic/icon/diagram (write images as SVG) — generate the real file with this tool. It shows in the chat with a download button. Don't also dump the whole file into your reply.
+Call a tool whenever it would make your answer more correct or concrete, then explain the result naturally. Never claim you "can't browse, run code, or make files" — you can.`;
 
 const WORKER_SRC=`
 self.onmessage=async function(e){
@@ -1131,11 +1145,78 @@ async function fetchUrl(u){
   if(!r.ok)throw new Error('fetch returned HTTP '+r.status);
   return (await r.text()).slice(0,8000)||'(empty page)';
 }
+// FILE CREATION — agents emit real downloadable documents & images
+const MIMES={text:'text/plain',markdown:'text/markdown',html:'text/html',csv:'text/csv',json:'application/json',code:'text/plain',svg:'image/svg+xml'};
+let artStore={},artN=0;
+function dlBlob(name,mime,data){
+  const blob=(data instanceof Blob)?data:new Blob([data],{type:mime});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function svgToPng(svg,name){
+  const img=new Image();
+  const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  img.onload=()=>{
+    const w=img.naturalWidth||512,h=img.naturalHeight||512,s=Math.min(4,2048/Math.max(w,h,1))||2;
+    const c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);
+    const ctx=c.getContext('2d');ctx.drawImage(img,0,0,c.width,c.height);
+    c.toBlob(b=>{if(b)dlBlob(name.replace(/\.svg$/i,'')+'.png','image/png',b)},'image/png');
+  };
+  img.onerror=()=>addMsg('⚠ Could not rasterize the SVG to PNG — download the SVG instead.','sys');
+  img.src=url;
+}
+function dlArtifact(id,fmt){
+  const a=artStore[id];if(!a)return;
+  if(fmt==='png'&&a.type==='svg')return svgToPng(a.content,a.name);
+  if(fmt==='doc'){
+    const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body>'+(a.type==='html'?a.content:'<pre style="font-family:Calibri,sans-serif;white-space:pre-wrap">'+esc(a.content)+'</pre>')+'</body></html>';
+    return dlBlob(a.name.replace(/\.[^.]+$/,'')+'.doc','application/msword',html);
+  }
+  dlBlob(a.name,MIMES[a.type]||'text/plain',a.content);
+}
+function renderArtifact(name,type,content){
+  const id=++artN;
+  artStore[id]={name,type,content};
+  const msgs=document.getElementById('msgs');
+  const w=document.createElement('div');
+  w.className='artifact';
+  const bytes=new Blob([content]).size;
+  const size=bytes<1024?bytes+' B':(bytes/1024).toFixed(1)+' KB';
+  const isImg=type==='svg';
+  let preview='';
+  if(isImg){
+    preview=`<div class="art-img"><img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}" alt="${esc(name)}"></div>`;
+  }else{
+    const snip=content.length>600?content.slice(0,600)+'\n…':content;
+    preview=`<pre class="art-pre">${esc(snip)}</pre>`;
+  }
+  const icon=isImg?'🖼️':(type==='csv'?'📊':type==='code'?'📜':type==='html'?'🌐':'📄');
+  let btns=`<button onclick="dlArtifact(${id},'native')">⬇ Download</button>`;
+  if(isImg)btns+=`<button onclick="dlArtifact(${id},'png')">⬇ PNG</button>`;
+  if(type==='markdown'||type==='text'||type==='html')btns+=`<button onclick="dlArtifact(${id},'doc')">⬇ Word</button>`;
+  w.innerHTML=`<div class="art-hd">${icon} <b>${esc(name)}</b> <span>${type} · ${size}</span></div>${preview}<div class="art-btns">${btns}</div>`;
+  msgs.appendChild(w);
+  msgs.scrollTop=msgs.scrollHeight;
+}
+function createFile(input){
+  let name=String(input.filename||'file').replace(/[\/\\]/g,'_').slice(0,80)||'file';
+  const type=MIMES[input.type]?input.type:'text';
+  const content=String(input.content||'');
+  if(!content.trim())return 'Error: empty file content.';
+  const EXT={text:'txt',markdown:'md',html:'html',csv:'csv',json:'json',code:'txt',svg:'svg'};
+  if(!/\.[a-z0-9]{1,5}$/i.test(name))name+='.'+EXT[type];
+  renderArtifact(name,type,content);
+  return 'Created file "'+name+'" ('+type+', '+content.length+' chars). It is shown to the user with download buttons — do not paste the full content again.';
+}
+
 async function runTool(name,input){
   try{
     if(name==='run_javascript')return await runJS(input.code);
     if(name==='web_search')return await webSearch(String(input.query||''));
     if(name==='fetch_url')return await fetchUrl(String(input.url||''));
+    if(name==='create_file')return createFile(input||{});
     return 'Unknown tool: '+name;
   }catch(err){
     if(err&&err.name==='AbortError')throw err;
@@ -1240,8 +1321,9 @@ async function callAPI(userMsg,isIntro=false,files=[]){
         for(const tu of toolUses){
           const label=tu.name==='run_javascript'?'running code':
                       tu.name==='web_search'?('searching: '+(tu.input.query||'')):
-                      tu.name==='fetch_url'?('reading '+(tu.input.url||'')):tu.name;
-          const icon=tu.name==='web_search'?'🔍':tu.name==='fetch_url'?'🌐':'🔧';
+                      tu.name==='fetch_url'?('reading '+(tu.input.url||'')):
+                      tu.name==='create_file'?('creating '+(tu.input.filename||'file')):tu.name;
+          const icon=tu.name==='web_search'?'🔍':tu.name==='fetch_url'?'🌐':tu.name==='create_file'?'📄':'🔧';
           toolMsg(icon,label,tu.name==='run_javascript'?tu.input.code:'');
           const out=await runTool(tu.name,tu.input||{});
           results.push({type:'tool_result',tool_use_id:tu.id,content:String(out).slice(0,12000)});
