@@ -27,6 +27,22 @@ by running code"*. If you see a `🔧 running code` chip and the exact number
 `⚠ tools not supported by this proxy`, the proxy is still stripping the field —
 redeploy with this `server.js`.
 
+## Image generation (optional)
+
+The agents' `generate_image` tool posts to `/api/image` on this proxy, which
+calls OpenAI's image model. To enable it:
+
+1. Get an **OpenAI API key** from the OpenAI **API platform**
+   (platform.openai.com → API keys). **Important:** this is a separate,
+   pay-as-you-go API product. A **ChatGPT / ChatGPT Enterprise** subscription
+   does **not** include it and cannot be used here — only an API key works.
+2. Set the env var **`OPENAI_API_KEY`** on this proxy.
+3. (Optional) `IMAGE_MODEL` — defaults to `gpt-image-1`.
+
+Until a key is set, `/api/image` returns HTTP 501 and the app shows a friendly
+"image generation not set up" message instead of failing. Vector graphics via
+`create_file` (SVG) keep working with no key.
+
 ## Notes
 
 - Node 18+ (uses built-in `fetch`). No dependencies.
