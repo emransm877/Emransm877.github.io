@@ -1077,7 +1077,9 @@ YOU HAVE REAL TOOLS — use them proactively, don't just describe what you'd do:
 - web_search + fetch_url: actually look things up on the live web when the answer depends on current or uncertain facts. Search, then fetch the best link to read it.
 - create_file: when the user wants a document, report, spreadsheet, code file, or a vector graphic/icon/diagram (as SVG) to keep or download. Shows in the chat with a download button. Don't also dump the whole file into your reply.
 - generate_image: for photo-style or artistic raster images (scenes, product shots, illustrations). Shows in the chat with a download button.
-Call a tool whenever it would make your answer more correct or concrete, then explain the result naturally. Never claim you "can't browse, run code, or make files" — you can.`;
+Call a tool whenever it would make your answer more correct or concrete, then explain the result naturally. Never claim you "can't browse, run code, or make files" — you can.
+
+CRITICAL — when the user asks for an actual image, picture, photo, logo, icon, or graphic: you MUST produce the finished image yourself, right now, by calling generate_image (for photos/artwork) or create_file with SVG (for logos/icons/diagrams). You are NOT a prompt-writing service. NEVER tell the user to paste a prompt into Midjourney, DALL·E, ChatGPT, Stable Diffusion, or any external tool — that is a failure. Do not invent excuses like "billing limit" or "I can't generate images." Only if a tool call actually returns an error may you mention it — and then quote the exact error text the tool gave you, nothing invented.`;
 
 const WORKER_SRC=`
 self.onmessage=async function(e){
@@ -1203,16 +1205,21 @@ async function generateImage(prompt,size){
   const r=await fetch(IMG_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:String(prompt||''),size:size||'1024x1024'}),signal:aborter&&aborter.signal});
   if(!r.ok){
     const t=await r.text().catch(()=>'');
-    if(r.status===501||/not configured|OPENAI_API_KEY/i.test(t))
+    if(r.status===501||/not configured|OPENAI_API_KEY/i.test(t)){
+      addMsg('⚠ Image generation not set up: add OPENAI_API_KEY to the Railway proxy.','sys');
       return 'Image generation is not set up on the server yet. Tell the user plainly: an OpenAI API key (OPENAI_API_KEY, from the OpenAI API platform — not a ChatGPT subscription) needs to be added to the Railway proxy to turn this on.';
+    }
     let msg=t;try{msg=(JSON.parse(t).error||{}).message||t}catch(e){}
-    return 'Image generation failed (HTTP '+r.status+'): '+String(msg).slice(0,160);
+    // Surface the REAL error to the user so it can't be hidden behind an excuse
+    addMsg('⚠ Image generation failed (HTTP '+r.status+'): '+String(msg).slice(0,200),'sys');
+    return 'Image generation failed (HTTP '+r.status+'): '+String(msg).slice(0,200)+'. Tell the user this exact error — do not invent a different reason.';
   }
   const d=await r.json();
   const b64=d&&d.data&&d.data[0]&&d.data[0].b64_json;
   if(!b64){
     const url=d&&d.data&&d.data[0]&&d.data[0].url;
     if(url)return 'The image was generated at '+url+' but could not be embedded. Share the link with the user.';
+    addMsg('⚠ Image generation returned no image data.','sys');
     return 'Image generation returned no image data.';
   }
   renderImageArtifact(String(prompt||'image'),b64);
