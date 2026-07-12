@@ -182,6 +182,12 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
 .mb.streaming::after{content:'▊';color:#00f0ff;animation:blink .9s infinite}
 @keyframes blink{50%{opacity:0}}
 
+/* TOOL ACTIVITY */
+.chat-rbtn.on{background:rgba(0,240,255,.12);border-color:#00f0ff;color:#00f0ff}
+.tool{align-self:flex-start;max-width:92%;background:#081020;border:1px solid rgba(0,240,255,.14);border-radius:9px;padding:7px 11px;font-family:'Space Mono',monospace;font-size:.62rem;color:#7ee7ff}
+.tool .tlabel{display:flex;align-items:center;gap:7px;letter-spacing:.04em}
+.tool pre{margin-top:6px;padding:7px;background:#050a14;border-radius:6px;color:#8fb8d8;font-size:.6rem;line-height:1.5;overflow-x:auto;max-height:140px;white-space:pre-wrap;word-break:break-word}
+
 /* MESSAGE ACTIONS */
 .macts{display:flex;gap:10px;margin-top:4px;padding-left:4px}
 .macts button{background:none;border:none;color:#2a3f5a;cursor:pointer;font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.05em;padding:2px 0;-webkit-tap-highlight-color:transparent}
@@ -266,6 +272,7 @@ html,body{height:100%;width:100%;background:#00000a;color:#e8f2ff;font-family:'S
       <div class="chat-name" id="chatName">Agency Intelligence</div>
       <div class="chat-sub" id="chatSub">231 agents · tap a card to activate</div>
     </div>
+    <button class="chat-rbtn on" id="toolsBtn" onclick="toggleTools()">🔧 TOOLS</button>
     <button class="chat-rbtn" onclick="clearChat()">🗑 CLEAR</button>
     <button class="chat-rbtn" onclick="resetAgent()">↺ RESET</button>
   </div>
@@ -305,6 +312,7 @@ function sendOrStop(){busy?stopGen():sendMsg()}
 function stopGen(){
   if(aborter)aborter.abort();
   if(typing)typing.skip=true;
+  if(activeWorker){try{activeWorker.terminate()}catch(e){}activeWorker=null}
 }
 function setSendMode(stop){
   const b=document.getElementById('sendBtn');
@@ -337,9 +345,9 @@ VIBE: "${a.vibe}"
 YOUR METHODOLOGY:
 ${a.system}
 
-Stay completely in character as ${a.name} at all times.`+CONVO_RULES;
+Stay completely in character as ${a.name} at all times.`+CONVO_RULES+(toolsEnabled?TOOL_NOTE:'');
   }
-  return `You are Agency Intelligence — command brain of Agency HQ with knowledge of all 231 specialist agents across 16 divisions. Help users find the right agent, build teams, and get expert guidance. Be specific, direct, and action-oriented.`+CONVO_RULES;
+  return `You are Agency Intelligence — command brain of Agency HQ with knowledge of all 231 specialist agents across 16 divisions. Help users find the right agent, build teams, and get expert guidance. Be specific, direct, and action-oriented.`+CONVO_RULES+(toolsEnabled?TOOL_NOTE:'');
 }
 
 function introPrompt(a){return `(The user just opened a chat with you. Greet them as ${a.name} in 1-2 short, personable sentences — who you are in plain words, plus one casual question about what they're working on. No lists, no headers, no formality.)`}
@@ -773,6 +781,7 @@ function init(){
 
   renderGrid();
   setupInput();
+  updateToolsBtn();
 
   // Restore HQ conversation from memory
   history=loadMem();
@@ -960,6 +969,16 @@ function renderHistory(){
   return shown;
 }
 
+function toolMsg(icon,label,code){
+  const msgs=document.getElementById('msgs');
+  const w=document.createElement('div');
+  w.className='tool';
+  w.innerHTML=`<div class="tlabel">${icon} ${esc(label)}</div>`+(code?`<pre>${esc(String(code).slice(0,600))}</pre>`:'');
+  msgs.appendChild(w);
+  msgs.scrollTop=msgs.scrollHeight;
+  return w;
+}
+
 function copyMsg(btn){
   const raw=btn.closest('.msg').dataset.raw||'';
   navigator.clipboard.writeText(raw).then(()=>{btn.textContent='✓ copied';setTimeout(()=>{btn.textContent='⧉ copy'},1200)}).catch(()=>{});
@@ -992,7 +1011,91 @@ async function sendMsg(){
   await callAPI(text,false,files);
 }
 
-// API — streams the reply live; falls back to typewriter if the proxy can't stream
+// ============ REAL TOOLS — agents can act, not just talk ============
+let toolsEnabled=true,activeWorker=null;
+try{toolsEnabled=localStorage.getItem('agencyTools')!=='0'}catch(e){}
+
+const TOOLS=[
+  {name:'run_javascript',description:'Execute JavaScript in a sandbox and get the result. Use this for ANY real calculation, math, data processing, parsing/transforming text, working with the contents of attached files, generating structured data, or verifying logic — never do arithmetic in your head, run it. The last expression or an explicit return value is captured, and console.log output is returned. No DOM or network access.',input_schema:{type:'object',properties:{code:{type:'string',description:'JavaScript source to execute'}},required:['code']}},
+  {name:'web_search',description:'Search the live web. Returns result titles, URLs and snippets. Use whenever the user asks about current events, recent facts, prices, people, products, or anything you are not certain about or that may have changed since your training.',input_schema:{type:'object',properties:{query:{type:'string',description:'The search query'}},required:['query']}},
+  {name:'fetch_url',description:'Fetch a web page or API endpoint and return its readable text content. Use to actually read an article, docs page, or link the user gives you, or a promising result from web_search.',input_schema:{type:'object',properties:{url:{type:'string',description:'Full http(s) URL to read'}},required:['url']}}
+];
+const TOOL_NOTE=`
+
+YOU HAVE REAL TOOLS — use them proactively, don't just describe what you'd do:
+- run_javascript: actually run code for any calculation, data work, or to verify something. Don't guess numbers — compute them.
+- web_search + fetch_url: actually look things up on the live web when the answer depends on current or uncertain facts. Search, then fetch the best link to read it.
+Call a tool whenever it would make your answer more correct or concrete, then explain the result naturally. Never claim you "can't browse or run code" — you can.`;
+
+const WORKER_SRC=`
+self.onmessage=async function(e){
+  var logs=[];
+  var console={log:function(){logs.push([].slice.call(arguments).map(String).join(' '))},
+    error:function(){logs.push('ERROR: '+[].slice.call(arguments).map(String).join(' '))},
+    warn:function(){logs.push([].slice.call(arguments).map(String).join(' '))},
+    info:function(){logs.push([].slice.call(arguments).map(String).join(' '))}};
+  try{
+    var fn=new Function('console','return (async function(){'+e.data+'\\n})()');
+    var r=await fn(console);
+    var out;
+    try{out=(typeof r==='string')?r:JSON.stringify(r,null,2)}catch(_){out=String(r)}
+    self.postMessage({ok:true,result:out,logs:logs});
+  }catch(err){self.postMessage({ok:false,error:String((err&&err.stack)||err),logs:logs})}
+};`;
+
+function runJS(code){
+  return new Promise(resolve=>{
+    let url,w;
+    try{
+      url=URL.createObjectURL(new Blob([WORKER_SRC],{type:'application/javascript'}));
+      w=new Worker(url);activeWorker=w;
+    }catch(err){resolve('could not start sandbox: '+err);return}
+    const done=(msg)=>{clearTimeout(to);try{w.terminate()}catch(_){}try{URL.revokeObjectURL(url)}catch(_){}if(activeWorker===w)activeWorker=null;resolve(msg)};
+    const to=setTimeout(()=>done('⏱ execution timed out after 6s (likely an infinite loop)'),6000);
+    w.onmessage=(e)=>{
+      const {ok,result,error,logs}=e.data;let s='';
+      if(logs&&logs.length)s+='console output:\n'+logs.join('\n')+'\n';
+      s+= ok?('result: '+(result===undefined?'(no return value)':result)):('threw error: '+error);
+      done(s.trim());
+    };
+    w.onerror=(e)=>done('error: '+(e.message||'sandbox failed'));
+    w.postMessage(String(code||''));
+  });
+}
+async function webSearch(q){
+  const r=await fetch('https://s.jina.ai/'+encodeURIComponent(q),{headers:{'X-Respond-With':'no-content'},signal:aborter&&aborter.signal});
+  if(!r.ok)throw new Error('search returned HTTP '+r.status);
+  return (await r.text()).slice(0,6000)||'(no results)';
+}
+async function fetchUrl(u){
+  if(!/^https?:\/\//i.test(u))u='https://'+u;
+  const r=await fetch('https://r.jina.ai/'+u,{signal:aborter&&aborter.signal});
+  if(!r.ok)throw new Error('fetch returned HTTP '+r.status);
+  return (await r.text()).slice(0,8000)||'(empty page)';
+}
+async function runTool(name,input){
+  try{
+    if(name==='run_javascript')return await runJS(input.code);
+    if(name==='web_search')return await webSearch(String(input.query||''));
+    if(name==='fetch_url')return await fetchUrl(String(input.url||''));
+    return 'Unknown tool: '+name;
+  }catch(err){
+    if(err&&err.name==='AbortError')throw err;
+    return 'Tool error: '+((err&&err.message)||err);
+  }
+}
+function toggleTools(){
+  toolsEnabled=!toolsEnabled;
+  try{localStorage.setItem('agencyTools',toolsEnabled?'1':'0')}catch(e){}
+  updateToolsBtn();
+  addMsg(toolsEnabled?'🔧 Tools ON — agents can run code, search the web, and read pages.':'🔧 Tools OFF — plain chat only.','sys');
+}
+function updateToolsBtn(){
+  const b=document.getElementById('toolsBtn');
+  if(b){b.classList.toggle('on',toolsEnabled);b.textContent=toolsEnabled?'🔧 TOOLS':'🔧 OFF'}
+}
+
+// API — agentic loop: the agent can call tools repeatedly, then answers
 async function callAPI(userMsg,isIntro=false,files=[]){
   if(busy&&!isIntro)return;
   busy=true;
@@ -1020,12 +1123,12 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     ui:isIntro?null:{text:userMsg,files:files.map(f=>({name:f.name,thumb:f.kind==='image'?('data:'+f.mime+';base64,'+f.data):null}))}
   });
   trimHistory();
-  const messages=history.map(m=>({role:m.role,content:m.content}));
+  const messages=history.map(m=>({role:m.role,content:m.content})); // working copy for this turn
 
   const msgs=document.getElementById('msgs');
   const thinkEl=document.createElement('div');
   thinkEl.className='thinking';
-  thinkEl.innerHTML=`<span class="dots"><span></span><span></span><span></span></span> ${who} is typing...`;
+  thinkEl.innerHTML=`<span class="dots"><span></span><span></span><span></span></span> ${who} is thinking...`;
   msgs.appendChild(thinkEl);
   msgs.scrollTop=msgs.scrollHeight;
 
@@ -1038,51 +1141,55 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     el.dataset.raw=txt;
     msgs.scrollTop=msgs.scrollHeight;
   };
+  const useTools=toolsEnabled&&!isIntro;
 
   try{
-    const payload={model:MODEL,max_tokens:4096,system,messages};
-    let res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,stream:true}),signal:aborter.signal});
-    const ct=res.headers.get('content-type')||'';
-
-    if(res.ok&&ct.includes('text/event-stream')){
-      // Real streaming — words appear as the agent writes them
-      const reader=res.body.getReader(),dec=new TextDecoder();
-      let buf='';
-      while(true){
-        const {done,value}=await reader.read();
-        if(done)break;
-        buf+=dec.decode(value,{stream:true});
-        const lines=buf.split('\n');buf=lines.pop();
-        for(const line of lines){
-          if(!line.startsWith('data:'))continue;
-          const d=line.slice(5).trim();
-          if(!d||d==='[DONE]')continue;
-          let ev;try{ev=JSON.parse(d)}catch(e){continue}
-          if(ev.type==='content_block_delta'&&ev.delta&&typeof ev.delta.text==='string'){full+=ev.delta.text;paint(full)}
-          else if(ev.type==='error')throw new Error((ev.error&&ev.error.message)||'Stream error');
-        }
-      }
-    }else{
-      // Proxy doesn't stream — fetch the full reply, then typewriter it
-      if(!res.ok||!ct.includes('application/json')){
-        res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
+    let guard=0;
+    while(true){
+      if(++guard>8)throw new Error('too many tool steps — stopping to avoid a loop');
+      const payload={model:MODEL,max_tokens:4096,system,messages};
+      if(useTools)payload.tools=TOOLS;
+      const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
+      if(!res.ok){
+        const tx=await res.text().catch(()=>'');
+        throw new Error('proxy HTTP '+res.status+(tx?': '+tx.slice(0,120):''));
       }
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||'API error');
-      full=(data.content&&data.content[0]&&data.content[0].text)||'';
+      const blocks=data.content||[];
+      const textOut=blocks.filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+      const toolUses=blocks.filter(b=>b.type==='tool_use');
+
+      if(data.stop_reason==='tool_use'&&toolUses.length){
+        thinkEl.style.display='none';
+        messages.push({role:'assistant',content:blocks}); // echo assistant turn back verbatim
+        const results=[];
+        for(const tu of toolUses){
+          const label=tu.name==='run_javascript'?'running code':
+                      tu.name==='web_search'?('searching: '+(tu.input.query||'')):
+                      tu.name==='fetch_url'?('reading '+(tu.input.url||'')):tu.name;
+          const icon=tu.name==='web_search'?'🔍':tu.name==='fetch_url'?'🌐':'🔧';
+          toolMsg(icon,label,tu.name==='run_javascript'?tu.input.code:'');
+          const out=await runTool(tu.name,tu.input||{});
+          results.push({type:'tool_result',tool_use_id:tu.id,content:String(out).slice(0,12000)});
+        }
+        messages.push({role:'user',content:results});
+        thinkEl.style.display='';
+        continue;
+      }
+
+      full=textOut;
       if(!full)throw new Error('Empty reply — try again');
       await typeOut(full,paint);
+      paint(full,true);
+      history.push({role:'assistant',content:full,ui:{who}});
+      saveMem();
+      break;
     }
-
-    if(!full)throw new Error('Empty reply — try again');
-    paint(full,true);
-    history.push({role:'assistant',content:full,ui:{who}});
-    saveMem();
   }catch(err){
     thinkEl.remove();
     const stopped=err&&(err.name==='AbortError'||/abort/i.test(err.message||''));
     if(full){
-      // keep whatever partially streamed in the bubble and in memory
       paint(full,true);
       history.push({role:'assistant',content:full,ui:{who}});
       saveMem();
