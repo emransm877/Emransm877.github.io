@@ -211,7 +211,8 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
 .art-hd{display:flex;align-items:center;gap:8px;font-size:.86rem;margin-bottom:10px}
 .art-hd b{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .art-hd span{margin-left:auto;font-size:.62rem;color:var(--faint);text-transform:uppercase;flex-shrink:0}
-.art-pre{background:var(--code-bg);border-radius:9px;padding:11px;font-family:var(--mono);font-size:.76rem;line-height:1.55;color:var(--text);max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.art-pre{background:var(--code-bg);border-radius:9px;padding:11px;font-family:var(--mono);font-size:.76rem;line-height:1.55;color:var(--text);max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.art-note{font-size:.68rem;color:var(--faint);margin-top:6px;font-style:italic}
 .art-img{background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px;text-align:center}
 .art-img img{max-width:100%;max-height:260px;border-radius:4px}
 .art-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
@@ -1462,8 +1463,9 @@ function renderArtifact(name,type,content){
   if(isImg){
     preview=`<div class="art-img"><img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}" alt="${esc(name)}"></div>`;
   }else{
-    const snip=content.length>600?content.slice(0,600)+'\n…':content;
-    preview=`<pre class="art-pre">${esc(snip)}</pre>`;
+    const truncated=content.length>2000;
+    const snip=truncated?content.slice(0,2000):content;
+    preview=`<pre class="art-pre">${esc(snip)}</pre>`+(truncated?`<div class="art-note">Preview only — click Download for the complete file (${content.length.toLocaleString()} characters).</div>`:'');
   }
   const icon=isImg?'🖼️':(type==='csv'?'📊':type==='code'?'📜':type==='html'?'🌐':type==='pdf'?'📕':'📄');
   const docLike=type==='markdown'||type==='text'||type==='html'||type==='pdf';
@@ -1614,7 +1616,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     let guard=0;
     while(true){
       if(++guard>8)throw new Error('too many tool steps — stopping to avoid a loop');
-      const payload={model:MODEL,max_tokens:4096,system,messages};
+      const payload={model:MODEL,max_tokens:16000,system,messages};
       if(toolsThisTurn)payload.tools=TOOLS;
       const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
       if(!res.ok){
@@ -1655,6 +1657,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
       paint(full,true);
       history.push({role:'assistant',content:full,ui:{who}});
       saveMem();
+      if(data.stop_reason==='max_tokens')addMsg('⚠ That reply hit the length limit — type "continue" and I\'ll pick up where it stopped.','sys');
       break;
     }
   }catch(err){
