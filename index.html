@@ -1548,6 +1548,7 @@ async function callAPI(userMsg,isIntro=false,files=[]){
     ui:isIntro?null:{text:userMsg,files:files.map(f=>({name:f.name,thumb:f.kind==='image'?('data:'+f.mime+';base64,'+f.data):null}))}
   });
   trimHistory();
+  if(!isIntro)saveMem(); // save + list the conversation immediately, even if the reply later errors
   const messages=history.map(m=>({role:m.role,content:m.content})); // working copy for this turn
 
   const msgs=document.getElementById('msgs');
