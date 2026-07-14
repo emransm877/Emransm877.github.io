@@ -304,9 +304,34 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);
   .grid{grid-template-columns:repeat(6,1fr)}
 }
 
+/* ACCESS GATE */
+.gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px}
+.gate.show{display:flex}
+.gate-card{width:100%;max-width:360px;text-align:center}
+.gate-mark{width:52px;height:52px;margin:0 auto 18px}
+.gate h1{font-family:var(--serif);font-weight:600;font-size:24px;color:var(--text);margin:0 0 6px}
+.gate p{color:var(--muted);font-size:14px;margin:0 0 22px;line-height:1.5}
+.gate input{width:100%;box-sizing:border-box;padding:13px 15px;font-size:16px;font-family:var(--sans);color:var(--text);background:var(--surface);border:1px solid var(--border-strong);border-radius:12px;outline:none}
+.gate input:focus{border-color:var(--accent)}
+.gate button{width:100%;margin-top:12px;padding:13px;font-size:15px;font-weight:600;font-family:var(--sans);color:#fff;background:var(--accent);border:none;border-radius:12px;cursor:pointer}
+.gate button:hover{background:var(--accent-hover)}
+.gate .gate-err{color:#c0392b;font-size:13px;min-height:18px;margin-top:10px}
+@media(prefers-color-scheme:dark){.gate .gate-err{color:#e88}}
 </style>
 </head>
 <body>
+
+<!-- ACCESS GATE -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <svg class="gate-mark" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="gh" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d98a6a"/><stop offset="1" stop-color="#b3634a"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#gh)"/><path d="M32 10 L36.2 25.8 L52 30 L36.2 34.2 L32 50 L27.8 34.2 L12 30 L27.8 25.8 Z" fill="#fff"/><path d="M47 9 L48.7 14.3 L54 16 L48.7 17.7 L47 23 L45.3 17.7 L40 16 L45.3 14.3 Z" fill="#fff" opacity="0.85"/></svg>
+    <h1>Agency HQ</h1>
+    <p>Enter the access password to continue.</p>
+    <input id="gatePass" type="password" autocomplete="current-password" placeholder="Password" onkeydown="if(event.key==='Enter')submitGate()">
+    <button onclick="submitGate()">Unlock</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
 
 <!-- CONVERSATION SIDEBAR -->
 <aside class="sidebar" id="sidebar">
@@ -412,6 +437,34 @@ const PROXY='https://agency-proxy-production.up.railway.app/api/chat';
 const IMG_PROXY=PROXY.replace(/\/api\/chat$/,'/api/image');
 const MODEL='claude-sonnet-4-6';
 
+// ACCESS GATE — the real password lives on the proxy (env var APP_PASSWORD).
+// The browser holds only what the user typed and sends it with every call;
+// the proxy rejects anything that doesn't match. Nothing secret is in this file.
+let appPass=(()=>{try{return localStorage.getItem('agencyPass')||''}catch(e){return''}})();
+function apiHeaders(){const h={'Content-Type':'application/json'};if(appPass)h['x-app-password']=appPass;return h;}
+function lockOut(msg){
+  try{localStorage.removeItem('agencyPass')}catch(e){}
+  appPass='';
+  showGate(msg||'That password didn’t work. Try again.');
+}
+function showGate(msg){
+  const g=document.getElementById('gate');if(!g)return;
+  g.classList.add('show');
+  const err=document.getElementById('gateErr');if(err)err.textContent=msg||'';
+  const inp=document.getElementById('gatePass');if(inp){inp.value='';setTimeout(()=>inp.focus(),80);}
+}
+function hideGate(){const g=document.getElementById('gate');if(g)g.classList.remove('show');}
+function submitGate(){
+  const inp=document.getElementById('gatePass');
+  const v=inp?inp.value.trim():'';
+  const err=document.getElementById('gateErr');
+  if(!v){if(err)err.textContent='Enter the password.';return;}
+  appPass=v;
+  try{localStorage.setItem('agencyPass',v)}catch(e){}
+  if(err)err.textContent='';
+  hideGate();
+}
+
 const CONVO_RULES=`
 
 HOW YOU TALK — these rules override everything above:
@@ -449,7 +502,8 @@ async function routeAgent(userMsg){
   const sys='You are the router for Agency HQ. Read the user message and pick the single best specialist to handle it from the list. Reply with ONLY compact JSON, no prose: {"i":<index or -1>,"why":"<max 6 words>"}. Use i=-1 only if none fit and a generalist is better.';
   const prompt='Specialists (index|name|division|description):\n'+AGENT_INDEX+'\n\nUser message: "'+String(userMsg).slice(0,500)+'"\n\nBest specialist as JSON:';
   try{
-    const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,max_tokens:60,system:sys,messages:[{role:'user',content:prompt}]}),signal:aborter&&aborter.signal});
+    const res=await fetch(PROXY,{method:'POST',headers:apiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:60,system:sys,messages:[{role:'user',content:prompt}]}),signal:aborter&&aborter.signal});
+    if(res.status===401){lockOut()}
     if(!res.ok)return {agent:null,why:''};
     const data=await res.json();
     const txt=(data.content&&data.content[0]&&data.content[0].text)||'';
@@ -1054,6 +1108,9 @@ function init(){
   renderHistory();
   renderSidebar();
   pushBack(); // baseline so the first back gesture is caught in-app
+
+  // Show the access gate until the user enters the password
+  if(!appPass)showGate();
 }
 
 function filtered(){
@@ -1492,9 +1549,10 @@ function renderImageArtifact(prompt,b64){
   msgs.scrollTop=msgs.scrollHeight;
 }
 async function generateImage(prompt,size){
-  const r=await fetch(IMG_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:String(prompt||''),size:size||'1024x1024'}),signal:aborter&&aborter.signal});
+  const r=await fetch(IMG_PROXY,{method:'POST',headers:apiHeaders(),body:JSON.stringify({prompt:String(prompt||''),size:size||'1024x1024'}),signal:aborter&&aborter.signal});
   if(!r.ok){
     const t=await r.text().catch(()=>'');
+    if(r.status===401){lockOut();addMsg('⚠ Locked — enter the access password to continue.','sys');return 'The app is locked. Tell the user to enter the access password.';}
     if(r.status===501||/not configured|OPENAI_API_KEY/i.test(t)){
       addMsg('⚠ Image generation not set up: add OPENAI_API_KEY to the Railway proxy.','sys');
       return 'Image generation is not set up on the server yet. Tell the user plainly: an OpenAI API key (OPENAI_API_KEY, from the OpenAI API platform — not a ChatGPT subscription) needs to be added to the Railway proxy to turn this on.';
@@ -1618,7 +1676,8 @@ async function callAPI(userMsg,isIntro=false,files=[]){
       if(++guard>8)throw new Error('too many tool steps — stopping to avoid a loop');
       const payload={model:MODEL,max_tokens:16000,system,messages};
       if(toolsThisTurn)payload.tools=TOOLS;
-      const res=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:aborter.signal});
+      const res=await fetch(PROXY,{method:'POST',headers:apiHeaders(),body:JSON.stringify(payload),signal:aborter.signal});
+      if(res.status===401){lockOut();throw new Error('locked — enter the access password to continue');}
       if(!res.ok){
         const tx=await res.text().catch(()=>'');
         // If the proxy can't handle the tools field, fall back to plain chat instead of breaking
