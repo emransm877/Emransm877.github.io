@@ -498,6 +498,42 @@ function convoTitle(){
   return u?u.ui.text.slice(0,44):'New chat';
 }
 function loadMem(){return activeConvoId?loadConvoMsgs(activeConvoId):[]}
+function titleFromMsgs(msgs){const u=(msgs||[]).find(m=>m.role==='user'&&!m.hidden&&m.ui&&m.ui.text);return u?u.ui.text.slice(0,44):''}
+// Self-healing: rebuild the conversation list from ANYTHING still in storage
+// (old single-thread format + orphaned chats), so nothing that survives is lost.
+function reconcileConvos(){
+  let list=loadConvoList();
+  const known=new Set(list.map(c=>c.id));
+  // migrate the old single continuous thread
+  try{
+    const legacy=JSON.parse(localStorage.getItem('agencyMain'));
+    if(Array.isArray(legacy)&&legacy.length){
+      const id=newId();
+      localStorage.setItem(convoKey(id),JSON.stringify(legacy));
+      localStorage.removeItem('agencyMain');
+      list.push({id,title:titleFromMsgs(legacy)||'Previous chat',ts:1,agent:null});
+      known.add(id);
+    }
+  }catch(e){}
+  // recover any agencyConvo_* saved in storage but missing from the list
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k&&k.indexOf('agencyConvo_')===0){
+        const id=k.slice(12);
+        if(!known.has(id)){
+          const msgs=loadConvoMsgs(id);
+          if(Array.isArray(msgs)&&msgs.some(m=>!m.hidden)){
+            list.push({id,title:titleFromMsgs(msgs)||'Recovered chat',ts:1,agent:null});
+            known.add(id);
+          }
+        }
+      }
+    }
+  }catch(e){}
+  saveConvoList(list);
+  return list;
+}
 function slimHistory(){
   return history.slice(-60).map(m=>{
     if(!Array.isArray(m.content))return m;
@@ -987,15 +1023,8 @@ function init(){
   updateToolsBtn();
   buildIndex();
 
-  // Conversations: migrate the old single thread, then open the most recent
-  let list=loadConvoList();
-  const legacy=loadConvoMsgs.length&&(function(){try{return JSON.parse(localStorage.getItem('agencyMain'))}catch(e){return null}})();
-  if(!list.length&&Array.isArray(legacy)&&legacy.length){
-    const id=newId();
-    try{localStorage.setItem(convoKey(id),JSON.stringify(legacy));localStorage.removeItem('agencyMain')}catch(e){}
-    list=[{id,title:'Previous chat',ts:Date.now(),agent:null}];
-    saveConvoList(list);
-  }
+  // Conversations: recover anything still in storage, then open the most recent
+  let list=reconcileConvos();
   let start=null;
   try{start=localStorage.getItem('agencyActiveConvo')}catch(e){}
   if(list.length){
