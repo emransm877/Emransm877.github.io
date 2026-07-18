@@ -98,21 +98,23 @@ class MainActivity : Activity() {
             fireThenReapplyTemp(WaltonCodes.FAN_STEP)
         }
 
+        // Every extra frame is also a full-state snapshot baked at 24 °C, so
+        // re-apply the real temperature after each so the AC keeps it.
         btnVSwing.setOnClickListener {
             state.vSwing = !state.vSwing
-            fire(if (state.vSwing) WaltonCodes.VSWING_ON else WaltonCodes.VSWING_OFF)
+            fireThenReapplyTemp(if (state.vSwing) WaltonCodes.VSWING_ON else WaltonCodes.VSWING_OFF)
         }
         btnHSwing.setOnClickListener {
             state.hSwing = !state.hSwing
-            fire(if (state.hSwing) WaltonCodes.HSWING_ON else WaltonCodes.HSWING_OFF)
+            fireThenReapplyTemp(if (state.hSwing) WaltonCodes.HSWING_ON else WaltonCodes.HSWING_OFF)
         }
         btnDisplay.setOnClickListener {
             state.display = !state.display
-            fire(if (state.display) WaltonCodes.DISPLAY_ON else WaltonCodes.DISPLAY_OFF)
+            fireThenReapplyTemp(if (state.display) WaltonCodes.DISPLAY_ON else WaltonCodes.DISPLAY_OFF)
         }
-        btnTurbo.setOnClickListener { state.turbo = !state.turbo; fire(WaltonCodes.TURBO) }
-        btnEco.setOnClickListener { state.eco = !state.eco; fire(WaltonCodes.ECO) }
-        btnHealth.setOnClickListener { state.health = !state.health; fire(WaltonCodes.HEALTH) }
+        btnTurbo.setOnClickListener { state.turbo = !state.turbo; fireThenReapplyTemp(WaltonCodes.TURBO) }
+        btnEco.setOnClickListener { state.eco = !state.eco; fireThenReapplyTemp(WaltonCodes.ECO) }
+        btnHealth.setOnClickListener { state.health = !state.health; fireThenReapplyTemp(WaltonCodes.HEALTH) }
 
         findViewById<Button>(R.id.btnRoomMinus).setOnClickListener {
             state.roomTemp--; refreshUi(); state.save(this)
