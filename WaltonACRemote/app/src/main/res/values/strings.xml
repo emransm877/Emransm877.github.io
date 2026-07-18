@@ -29,5 +29,23 @@
     <string name="carrier_format">CARRIER: %d kHz (tap to change)</string>
     <string name="diag_placeholder">press a button to test…</string>
     <string name="diag_format">blaster present: %1$s\nphone supports: %2$s Hz\nlast signal: %3$s</string>
+    <string name="open_universal">🌐 UNIVERSAL REMOTE (any device)</string>
+    <string name="uni_title">Universal IR Remote</string>
+    <string name="uni_subtitle">Fire any protocol, any Pronto code, or a raw pattern — at one carrier or shotgun across every carrier your blaster supports.</string>
+    <string name="uni_protocol_label">PROTOCOL</string>
+    <string name="uni_addr_cmd_label">ADDRESS / COMMAND (hex, e.g. 0x04 / 0x08) — for protocol modes</string>
+    <string name="uni_addr_hint">address (hex)</string>
+    <string name="uni_cmd_hint">command (hex)</string>
+    <string name="uni_pronto_label">PRONTO HEX (pick \"Pronto HEX\") — paste any code from a remote database</string>
+    <string name="uni_pronto_hint">0000 006D 0022 0002 0155 00AB …</string>
+    <string name="uni_raw_label">RAW PATTERN (pick \"RAW pattern\") — microseconds, comma or space separated</string>
+    <string name="uni_raw_hint">9000, 4500, 560, 560, 560, 1690 …</string>
+    <string name="uni_raw_carrier_hint">carrier Hz for raw (default 38000)</string>
+    <string name="uni_shotgun_label">Shotgun: send at EVERY supported carrier (max compatibility)</string>
+    <string name="uni_send">TRANSMIT ⚡</string>
+    <string name="uni_status_placeholder">ready</string>
+    <string name="uni_status_idle">blaster present: %1$s\nsupported carriers: %2$s</string>
+    <string name="uni_shotgun">shotgun: %1$d pulses fired at %2$s</string>
+    <string name="uni_bad_input">invalid input for the selected mode — check hex / Pronto / raw values</string>
     <string name="footer_note">This remote sends the exact IR signals used by the official Walton remote (76 kHz carrier), so your Walton AC responds just like it does to the original. Fan speed steps the AC\'s own speed each press. Swing is per-axis on/off — that is all the AC\'s IR supports. IR is one-way, so ROOM temperature is a display value you set to match your thermometer; press SYNC if the AC ever gets out of step.</string>
 </resources>

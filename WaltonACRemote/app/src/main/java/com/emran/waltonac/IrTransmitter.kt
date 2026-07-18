@@ -55,6 +55,34 @@ class IrTransmitter(context: Context) {
         }
     }
 
+    /** Fire an encoded IrSignal (protocol/Pronto/raw) at its own carrier. */
+    fun sendSignal(sig: IrSignal): Boolean = send(sig.pattern, sig.carrierHz)
+
+    /**
+     * Representative carrier frequencies the blaster reports supporting, for
+     * the "shotgun" mode that fires a pattern at every one to guarantee a hit.
+     * Falls back to the common IR band if the phone reports nothing.
+     */
+    fun supportedCarrierList(): List<Int> {
+        val fallback = listOf(38000, 36000, 40000, 33000, 56000)
+        val emitter = ir ?: return fallback
+        return try {
+            val ranges = emitter.carrierFrequencies ?: return fallback
+            val out = LinkedHashSet<Int>()
+            for (r in ranges) {
+                out.add(r.minFrequency)
+                out.add(r.maxFrequency)
+                out.add((r.minFrequency + r.maxFrequency) / 2)
+                for (f in intArrayOf(33000, 36000, 38000, 40000, 56000)) {
+                    if (f in r.minFrequency..r.maxFrequency) out.add(f)
+                }
+            }
+            if (out.isEmpty()) fallback else out.toList()
+        } catch (e: Exception) {
+            fallback
+        }
+    }
+
     private fun buzz() {
         val v = vibrator ?: return
         try {

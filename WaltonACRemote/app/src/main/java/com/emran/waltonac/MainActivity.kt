@@ -76,6 +76,9 @@ class MainActivity : Activity() {
             }
         }
         findViewById<Button>(R.id.btnSync).setOnClickListener { sync() }
+        findViewById<Button>(R.id.btnUniversal).setOnClickListener {
+            startActivity(android.content.Intent(this, UniversalActivity::class.java))
+        }
 
         findViewById<Button>(R.id.btnTempMinus).setOnClickListener {
             if (state.temp > AcState.MIN_TEMP) { state.temp--; fire(state.tempFrame()) }
