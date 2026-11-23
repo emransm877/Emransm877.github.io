@@ -1,18 +1,14 @@
 name: Build Bluetooth Keyboard APK
 
 on:
-  push:
-    paths:
-      - "bluetooth-keyboard/**"
-      - ".github/workflows/build-bt-keyboard-apk.yml"
   workflow_dispatch:
-
 permissions:
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -32,6 +28,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: bt-keyboard-debug-apk
           path: bluetooth-keyboard/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
